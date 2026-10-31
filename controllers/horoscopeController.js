@@ -1,0 +1,231 @@
+const Horoscope = require("../models/horoscope");
+const { calculateNatalChart, normalizeTimeOfBirth } = require("../services/astrologyService");
+const { resolveBirthLocationFromPlace } = require("../services/birthLocationService");
+const { getDashaTimeline, getDashaHouseActivations } = require("../services/dashaService");
+const { buildBirthCharts } = require("../services/birthChartService");
+
+// Public API accepts the user-friendly names below:
+// birthDate, birthTime (e.g. "4:45 PM"), and birthPlace.
+// The database keeps the canonical field names used by the Horoscope model.
+const buildHoroscopeData = (body) => {
+  const data = {};
+
+  if (body.name !== undefined) data.name = body.name;
+  if (body.birthDate !== undefined) data.dateOfBirth = body.birthDate;
+  else if (body.dateOfBirth !== undefined) data.dateOfBirth = body.dateOfBirth;
+
+  if (body.birthTime !== undefined) data.timeOfBirth = body.birthTime;
+  else if (body.timeOfBirth !== undefined) data.timeOfBirth = body.timeOfBirth;
+
+  if (body.birthPlace !== undefined) data.placeOfBirth = body.birthPlace;
+  else if (body.placeOfBirth !== undefined) data.placeOfBirth = body.placeOfBirth;
+
+  if (body.moonSign !== undefined) data.moonSign = body.moonSign;
+  if (body.nakshatra !== undefined) data.nakshatra = body.nakshatra;
+
+  if (body.timeZoneId !== undefined) data.timeZoneId = body.timeZoneId;
+
+  return data;
+};
+
+// Vimshottari dasha for a stored horoscope, computed on READ.
+//
+// Dasha is a time-dependent layer, so it is never stored — a stored dasha
+// silently goes stale. Both the chart endpoint and /api/horoscope/dasha build
+// it here from the stored chart, so the two can never disagree.
+//
+// Returns null when there is not enough information (no chart, no Moon
+// longitude, or a date before the user's birth).
+const buildDashaPayload = (horoscope, at = new Date()) => {
+  const moonLongitude = horoscope?.vedicChart?.planets?.Moon?.longitude;
+  if (!Number.isFinite(moonLongitude)) return null;
+
+  // Dasha periods are anchored to the birth instant, so the stored timezone
+  // offset has to be applied rather than using raw dateOfBirth, which
+  // Mongoose hands back as UTC midnight.
+  const dateOfBirth = horoscope.dateOfBirth instanceof Date
+    ? horoscope.dateOfBirth
+    : new Date(horoscope.dateOfBirth);
+  if (Number.isNaN(dateOfBirth.getTime())) return null;
+
+  const normalizedTime = normalizeTimeOfBirth(horoscope.timeOfBirth) || "00:00";
+  const [hh, mm] = normalizedTime.split(":").map(Number);
+  const localMillis = Date.UTC(
+    dateOfBirth.getUTCFullYear(),
+    dateOfBirth.getUTCMonth(),
+    dateOfBirth.getUTCDate(),
+    hh, mm
+  );
+  const birthInstant = new Date(localMillis - (horoscope.timeZoneOffsetMinutes || 0) * 60 * 1000);
+
+  const timeline = getDashaTimeline({
+    moonSiderealLongitude: moonLongitude,
+    birthDate: birthInstant,
+    atDate: at,
+  });
+  if (!timeline.current) return null;
+
+  return {
+    asOf: at,
+    balanceAtBirth: timeline.balance,
+    current: timeline.current,
+    antardashas: timeline.antardashas,
+    pratyantardashas: timeline.pratyantardashas,
+    houseActivations: getDashaHouseActivations({ planets: horoscope.vedicChart.planets, timeline }),
+    upcomingMahadashas: timeline.mahadashas
+      .filter((m) => m.start > at)
+      .slice(0, 4)
+      .map(({ planet, start, end, years }) => ({ planet, start, end, years })),
+  };
+};
+
+const includeCalculatedChart = (horoscope) => {
+  const data = horoscope.toObject();
+  const chart = calculateNatalChart(horoscope);
+  return {
+    ...data,
+    sunSign: chart.sunSign,
+    calculatedMoonSign: chart.moonSign,
+    moonSignPrecision: chart.precision,
+    // The drawable Lagna (D1) and Navamsa (D9) charts, derived from the same
+    // stored vedicChart. Sent inline so the chart screen needs one request.
+    charts: buildBirthCharts(data.vedicChart),
+    // The running Vimshottari dasha travels with the chart: a chart without
+    // its dasha is only half the answer, and the app used to have to make a
+    // second request to get it.
+    dasha: buildDashaPayload(data),
+  };
+};
+
+const hydrateBirthLocation = async (body) => {
+  const place = body.birthPlace || body.placeOfBirth || body.place || "";
+  const baseData = buildHoroscopeData(body);
+
+  // A place determines its historical timezone. In particular, do not let a
+  // client default of 0 minutes turn local birth time into UTC.
+  if (place) {
+    const birthDate = body.birthDate || body.dateOfBirth;
+    const resolved = await resolveBirthLocationFromPlace(place, birthDate);
+    if (!resolved) {
+      const error = new Error("Could not resolve the birth place to coordinates and timezone. Please check the place name or provide a timezone offset manually.");
+      error.expose = true;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    return {
+      ...baseData,
+      placeOfBirth: resolved.placeOfBirth,
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+      timeZoneOffsetMinutes: resolved.timeZoneOffsetMinutes,
+      timeZoneId: resolved.timeZoneId,
+      timeZonePrecision: resolved.timeZonePrecision,
+    };
+  }
+
+  // With no place, allow a manually supplied offset and coordinates.
+  if (body.timeZoneOffsetMinutes !== undefined && Number.isFinite(Number(body.timeZoneOffsetMinutes))) {
+    baseData.timeZoneOffsetMinutes = Number(body.timeZoneOffsetMinutes);
+    baseData.timeZonePrecision = "user";
+    if (body.latitude !== undefined && body.longitude !== undefined) {
+      baseData.latitude = Number(body.latitude);
+      baseData.longitude = Number(body.longitude);
+    }
+  }
+
+  return baseData;
+};
+
+const createHoroscope = async (req, res, next) => {
+  try {
+    const data = await hydrateBirthLocation(req.body);
+    const horoscope = await Horoscope.create({ user: req.user._id, ...data });
+    // Mirror /me and /update: the created chart is returned already hydrated
+    // with the derived sun/moon signs and the drawable birth charts.
+    res.status(201).json({ success: true, message: "Horoscope created", data: includeCalculatedChart(horoscope) });
+  } catch (error) { next(error); }
+};
+
+const getMyHoroscope = async (req, res, next) => {
+  try {
+    const horoscope = await Horoscope.findOne({ user: req.user._id });
+    if (!horoscope) return res.status(404).json({ success: false, message: "Horoscope not found" });
+    res.json({ success: true, message: "Horoscope retrieved", data: includeCalculatedChart(horoscope) });
+  } catch (error) { next(error); }
+};
+
+const updateHoroscope = async (req, res, next) => {
+  try {
+    const data = await hydrateBirthLocation(req.body);
+    const horoscope = await Horoscope.findOne({ user: req.user._id });
+    if (!horoscope) return res.status(404).json({ success: false, message: "Horoscope not found" });
+    Object.assign(horoscope, data);
+    await horoscope.save();
+    res.json({ success: true, message: "Horoscope updated", data: includeCalculatedChart(horoscope) });
+  } catch (error) { next(error); }
+};
+
+// GET /api/horoscope/charts?varga=d1,d9
+// The drawable birth charts (Lagna D1 + Navamsa D9 by default) for the
+// logged-in user, derived from the stored vedicChart. `/me` already carries the
+// same block; this endpoint exists so a client can refresh just the charts, or
+// ask for a different division (`varga=all`, `varga=d10`), without re-fetching
+// the whole horoscope.
+const getMyCharts = async (req, res, next) => {
+  try {
+    const horoscope = await Horoscope.findOne({ user: req.user._id }).lean();
+    if (!horoscope) return res.status(404).json({ success: false, message: "Horoscope not found" });
+
+    const data = buildBirthCharts(horoscope.vedicChart, {
+      vargas: req.query.varga ?? req.query.type,
+    });
+    res.json({ success: true, message: "Birth charts retrieved", data });
+  } catch (error) { next(error); }
+};
+
+// GET /api/horoscope/dasha?at=YYYY-MM-DD
+// Vimshottari timing for the logged-in user. Defaults to "now".
+// Returns the running mahadasha/antar-dasha/pratyantardasha plus the
+// house cross-reference, which is what makes dasha actionable: the course
+// rule is that a malefic in a difficult house does nothing until ITS dasha
+// activates it.
+const getMyDasha = async (req, res, next) => {
+  try {
+    const horoscope = await Horoscope.findOne({ user: req.user._id }).lean();
+    if (!horoscope) return res.status(404).json({ success: false, message: "Horoscope not found" });
+
+    const moonLongitude = horoscope.vedicChart?.planets?.Moon?.longitude;
+    if (!Number.isFinite(moonLongitude)) {
+      return res.status(400).json({
+        success: false,
+        message: "Vimshottari dasha needs the Moon's sidereal longitude, but no Vedic chart is on file. Save your birth date, time and place first.",
+      });
+    }
+
+    let at = new Date();
+    if (req.query.at) {
+      const parsed = new Date(req.query.at);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, message: "at must be a valid date" });
+      }
+      at = parsed;
+    }
+
+    const dasha = buildDashaPayload(horoscope, at);
+    if (!dasha) {
+      return res.status(400).json({
+        success: false,
+        message: `The requested date (${at.toISOString().slice(0, 10)}) is before this user's birth date.`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Vimshottari dasha retrieved",
+      data: dasha,
+    });
+  } catch (error) { next(error); }
+};
+
+module.exports = { createHoroscope, getMyHoroscope, updateHoroscope, getMyDasha, getMyCharts, hydrateBirthLocation, buildDashaPayload };

@@ -1,0 +1,77 @@
+const jwt = require("jsonwebtoken");
+const User = require("../models/user");
+
+const protect = async (req, res, next) => {
+  try {
+    let token;
+
+    if (req.headers.authorization) {
+      const [scheme, value] = req.headers.authorization.split(" ");
+      if (scheme === "Bearer" && value) {
+        token = value;
+      }
+    }
+
+    if (!token) {
+      token = req.cookies && req.cookies.token;
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.userId || decoded.id;
+
+    const user = await User.findById(userId);
+    if (!user || !user.isActive) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    req.user = user;
+
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
+  }
+};
+
+const optionalProtect = async (req, res, next) => {
+  try {
+    let token;
+
+    if (req.headers.authorization) {
+      const [scheme, value] = req.headers.authorization.split(" ");
+      if (scheme === "Bearer" && value) {
+        token = value;
+      }
+    }
+
+    if (!token && req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    }
+
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.userId || decoded.id;
+      const user = await User.findById(userId);
+      if (user && user.isActive) {
+        req.user = user;
+      }
+    }
+  } catch (error) {
+    // Optional auth: continue as unauthenticated guest
+  }
+  next();
+};
+
+module.exports = {
+  protect,
+  optionalProtect,
+};

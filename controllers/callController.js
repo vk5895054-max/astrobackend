@@ -1,0 +1,86 @@
+const mongoose = require("mongoose");
+const { AccessToken } = require("livekit-server-sdk");
+const Match = require("../models/match");
+const { ensureBillable } = require("../services/consultationBilling");
+
+const createCallToken = async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.matchId)) {
+      return res.status(400).json({ success: false, message: "Invalid matchId" });
+    }
+
+    const kind = req.body?.kind || "video";
+    if (!["voice", "video"].includes(kind)) {
+      return res.status(400).json({ success: false, message: "kind must be voice or video" });
+    }
+
+    const match = await Match.findOne({
+      _id: req.params.matchId,
+      status: { $in: ["accepted", "active", "ended"] },
+      $or: [{ userA: req.user._id }, { userB: req.user._id }],
+    }).lean();
+    if (!match) return res.status(403).json({ success: false, message: "Calls are available only after the match request is accepted" });
+    if (match.matchType === "consultation") {
+      if (!["accepted", "active"].includes(match.status)) {
+        return res.status(403).json({ success: false, message: "This consultation has ended" });
+      }
+      // Pay-first for calls: only the paying client is gated, and only once the
+      // pair's free minutes are exhausted.
+      if (String(match.consultation?.client) === String(req.user._id)) {
+        const gate = await ensureBillable(match);
+        if (!gate.ok && gate.reason !== "busy") {
+          return res.status(402).json({
+            success: false,
+            code: gate.reason === "ended" ? "CONSULTATION_ENDED" : "INSUFFICIENT_BALANCE",
+            message:
+              gate.reason === "ended"
+                ? "This consultation has ended"
+                : "Please recharge your wallet to continue — your paid minutes are over.",
+            data: gate.summary
+              ? {
+                  freeRemainingSec: gate.summary.freeRemainingSec,
+                  walletBalance: gate.summary.walletBalance,
+                  paidMinutesLeft: gate.summary.paidMinutesLeft,
+                  ratePerMin: gate.summary.ratePerMin,
+                }
+              : {},
+          });
+        }
+      }
+    } else if (match.status !== "accepted") {
+      return res.status(403).json({ success: false, message: "Calls are available only after the match request is accepted" });
+    }
+
+    const secret = process.env.LIVEKIT_API_SECRET || "";
+    const looksPlaceholder = /[•*]/.test(secret) || secret.includes("your-secret-here") || secret === "replace_me";
+    if (!process.env.LIVEKIT_API_KEY || !secret || !process.env.LIVEKIT_URL || looksPlaceholder) {
+      return res.status(503).json({ success: false, message: "LiveKit is not configured on the server" });
+    }
+
+    const roomName = `match-${match._id}`;
+    const accessToken = new AccessToken(process.env.LIVEKIT_API_KEY, secret, {
+      identity: String(req.user._id),
+      name: req.user.name,
+      ttl: "1h",
+    });
+    accessToken.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
+
+    // Mark the call as connected so billing starts from this moment, not from
+    // when the consultation was created. This ensures we only charge for actual
+    // call time, not ringing/connection time.
+    if (match.matchType === "consultation" && !match.consultation.callConnectedAt) {
+      await Match.updateOne(
+        { _id: match._id },
+        { $set: { "consultation.callConnectedAt": new Date() } }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `${kind} call token created`,
+      data: { token: await accessToken.toJwt(), serverUrl: process.env.LIVEKIT_URL, roomName, kind },
+    });
+  } catch (error) { next(error); }
+};
+
+module.exports = { createCallToken };

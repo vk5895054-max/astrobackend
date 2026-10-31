@@ -1,0 +1,191 @@
+const mongoose = require("mongoose");
+const {
+  ZODIAC_SIGN_NAMES,
+  calculateNatalChart,
+  normalizeTimeOfBirth,
+} = require("../services/astrologyService");
+const { calculateVedicChart } = require("../services/vedicAstrologyService");
+const { buildVedicAnalysis } = require("../services/vedicAnalysisService");
+
+const horoscopeSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+    },
+
+    name: {
+      type: String,
+      trim: true,
+    },
+
+    dateOfBirth: {
+      type: Date,
+      required: true,
+    },
+
+    // Required for real Vedic (Ascendant/house-based) analysis — without
+    // this, only planetary sign placements are available, no houses.
+    timeOfBirth: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^([01]\d|2[0-3]):([0-5]\d)$/, "timeOfBirth must be a valid time"],
+    },
+
+    timeZoneOffsetMinutes: {
+      type: Number,
+      min: -840,
+      max: 840,
+      default: 0,
+    },
+
+    // IANA timezone name (e.g. "America/New_York") that produced the stored
+    // offset, and how trustworthy that offset is:
+    //  - "historical": resolved from the exact birth moment's IANA history
+    //  - "current-estimate": fell back to today's offset (old/edge-case dates)
+    //  - "user": supplied directly by the user/app
+    timeZoneId: {
+      type: String,
+      trim: true,
+    },
+
+    timeZonePrecision: {
+      type: String,
+      enum: ["historical", "current-estimate", "user"],
+      default: "current-estimate",
+    },
+
+    placeOfBirth: {
+      type: String,
+      trim: true,
+    },
+
+    // Required (alongside timeOfBirth) for Ascendant calculation. Populate
+    // these from a place-autocomplete field on the frontend (e.g. Google
+    // Places) rather than asking users to enter coordinates directly.
+    latitude: {
+      type: Number,
+      min: -90,
+      max: 90,
+    },
+
+    longitude: {
+      type: Number,
+      min: -180,
+      max: 180,
+    },
+
+    // --- Western (tropical) fields — unchanged, kept for the existing sun-sign system ---
+    sunSign: {
+      type: String,
+      enum: ZODIAC_SIGN_NAMES,
+    },
+
+    calculatedMoonSign: {
+      type: String,
+      enum: ZODIAC_SIGN_NAMES,
+    },
+
+    moonSignPrecision: {
+      type: String,
+      enum: ["birth-time", "date-only-estimate", "unavailable"],
+    },
+
+    moonSign: {
+      type: String,
+      enum: ZODIAC_SIGN_NAMES,
+    },
+
+    // User-supplied override — most users won't have this and it's
+    // computed automatically below (vedicChart.moonNakshatra) once
+    // birth time/location are available.
+    nakshatra: {
+      type: String,
+      trim: true,
+    },
+
+    // --- Vedic (sidereal) chart — computed automatically, not user-editable ---
+    // Full structured output of calculateVedicChart: Ascendant, planets
+    // with house/sign/Navamsha/strength flags, house lords, Moon
+    // Nakshatra, ayanamsha used, etc. Stored as Mixed since its shape is
+    // intentionally rich (see vedicAstrologyService.js for the schema).
+    vedicChart: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+
+    // --- Static Vedic analysis — derived, not authoritative on its own ---
+    // Output of buildVedicAnalysis: per-planet dignity/strength (rule 6.1),
+    // divisional signs, D1/D9 comparison (rule 14.9), the Moon's shadvarga
+    // check (rule 13.10), drishti, and conjunction groups.
+    //
+    // Kept separate from vedicChart because vedicChart's shape is consumed
+    // directly by the API and the QA context, and because every value here is
+    // STATIC — derived only from the birth instant. Time-dependent layers
+    // (dasha, transits) are computed on read and are deliberately NOT stored
+    // here, because a stored dasha would silently go stale.
+    //
+    // Each block carries its own provenance so the AI layer can distinguish
+    // corpus rules from standard convention.
+    vedicAnalysis: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+  },
+  { timestamps: true }
+);
+
+horoscopeSchema.pre("validate", function computeCharts() {
+  let birthTimeIsValid = true;
+
+  if (this.timeOfBirth) {
+    const normalizedTime = normalizeTimeOfBirth(this.timeOfBirth);
+    if (!normalizedTime) {
+      this.invalidate("timeOfBirth", "timeOfBirth must be in h:mm AM/PM or HH:mm format");
+      // A malformed time is a typo, not missing data. Computing a chart anyway
+      // would produce a real-looking "no-birth-time" analysis built from a bad
+      // string, which is far more misleading than having nothing at all.
+      birthTimeIsValid = false;
+    } else {
+      this.timeOfBirth = normalizedTime;
+    }
+  }
+
+  if (this.dateOfBirth && birthTimeIsValid) {
+    const chart = calculateNatalChart({
+      dateOfBirth: this.dateOfBirth,
+      timeOfBirth: this.timeOfBirth,
+      timeZoneOffsetMinutes: this.timeZoneOffsetMinutes,
+    });
+    this.sunSign = chart.sunSign;
+    this.calculatedMoonSign = chart.moonSign;
+    // Moon sign is calculated automatically from the exact birth time.
+    this.moonSign = chart.moonSign;
+    this.moonSignPrecision = chart.precision;
+
+    this.vedicChart = calculateVedicChart({
+      dateOfBirth: this.dateOfBirth,
+      timeOfBirth: this.timeOfBirth,
+      timeZoneOffsetMinutes: this.timeZoneOffsetMinutes,
+      latitude: this.latitude,
+      longitude: this.longitude,
+    });
+
+    // The chart reports the exact instant it computed for, so the analysis reuses
+    // that rather than re-deriving a date that could silently disagree with it.
+    this.vedicAnalysis = buildVedicAnalysis({
+      chart: this.vedicChart,
+      utcDate: this.vedicChart?.birthInstant ? new Date(this.vedicChart.birthInstant) : null,
+    });
+
+    // The Moon's nakshatra is the single most-consulted fact about a chart —
+    // it decides the birth dasha lord — so it is derived from the chart
+    // instead of being left blank. A user-supplied value still wins.
+    if (!this.isModified("nakshatra")) {
+      this.nakshatra = this.vedicChart?.moonNakshatra?.name || "";
+    }
+  }
+});
+
+module.exports = mongoose.model("Horoscope", horoscopeSchema);
