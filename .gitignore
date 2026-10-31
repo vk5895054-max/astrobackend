@@ -4,7 +4,6 @@ config/firebase-service-account.json
 /uploads
 
 firebase-service-account.json
-*.json
 !data/numeroKnowledgeBase.json
 
 mp4.py
