@@ -1,6 +1,6 @@
 // Kundli Calculation Service
 // Full Parashari and Krishnamurti Paddhati (KP) calculation engine for the
-// 26-screen Vedic Kundli flow shown in the application.
+// Kundli AI flow shown in the application.
 //
 // Computes:
 // 1. New Kundli / Input details
@@ -29,6 +29,14 @@
 // 24. Cloud synchronization features & membership status
 // 25. Download PDF options (Basic 50-page & Brihat 250-page Kundli)
 // 26. Ask Questions & contextual AI astrology assistant
+// 27. Nakshatra Nadi (Adi / Madhya / Antya reading from the Moon nakshatra)
+// 28. Chandra Kala Nadi (Deva Keralam rashi / nadi-amsha reading)
+// 29. Lal Kitab (planet-in-house predictions & remedies)
+// 30. Tri Bhagi Dasha (each mahadasha split into three nakshatra bhagis)
+// 31. Lal Kitab Dasha timeline
+// 32. CIL (Sub Sub) house significations
+// 33. Prediction and Remedies
+// 34. Varsha Kundli (annual solar-return chart)
 
 const Astronomy = require("astronomy-engine");
 const {
@@ -51,8 +59,15 @@ const {
   getRetrogradeMap,
 } = require("./vedicAstrologyService");
 const { toSidereal, getAyanamsha, getTrueAyanamsha, getJulianDay } = require("./ayanamsha");
-const { calculateDashaBalance, getDashaTimeline } = require("./dashaService");
+const {
+  calculateDashaBalance,
+  getDashaTimeline,
+  getTribhagiTimeline,
+  buildSubPeriods,
+} = require("./dashaService");
 const { getVargaSign } = require("./vedicVargaService");
+const { getNakshatraNadiReport, getChandraKalaNadiReport } = require("./nadiService");
+const { buildLalKitabReport } = require("./lalKitabService");
 const { assessChartStrength } = require("./planetStrengthService");
 const { getAspects } = require("./drishtiService");
 
@@ -662,6 +677,122 @@ function buildChartRepresentation(houseSignMap, planetsBySign) {
   return houses;
 }
 
+function findSolarReturnInstant(targetSunLongitude, year, month, day) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const birthday = Date.UTC(year, month, day);
+  let low = new Date(birthday - 8 * dayMs);
+  let high = new Date(birthday + 8 * dayMs);
+  const difference = (date) => {
+    const sunLongitude = getPlanetSiderealLongitudes(date).sidereal.Sun;
+    return (((sunLongitude - targetSunLongitude + 540) % 360) + 360) % 360 - 180;
+  };
+  let lowDifference = difference(low);
+  const highDifference = difference(high);
+  if (lowDifference > 0 || highDifference < 0) {
+    throw new RangeError("Could not locate the annual sidereal solar return");
+  }
+
+  for (let i = 0; i < 40; i++) {
+    const midpoint = new Date((low.getTime() + high.getTime()) / 2);
+    if (difference(midpoint) < 0) {
+      low = midpoint;
+      lowDifference = difference(midpoint);
+    } else {
+      high = midpoint;
+    }
+  }
+  return new Date((low.getTime() + high.getTime()) / 2);
+}
+
+function getSolarReturnPeriod({
+  targetSunLongitude,
+  birthDate,
+  asOfDate,
+}) {
+  const year = asOfDate.getUTCFullYear();
+  const month = birthDate.getUTCMonth();
+  const day = birthDate.getUTCDate();
+  const thisYear = findSolarReturnInstant(targetSunLongitude, year, month, day);
+  if (thisYear <= asOfDate) {
+    return {
+      start: thisYear,
+      end: findSolarReturnInstant(targetSunLongitude, year + 1, month, day),
+    };
+  }
+  return {
+    start: findSolarReturnInstant(targetSunLongitude, year - 1, month, day),
+    end: thisYear,
+  };
+}
+
+function buildVarshaKundli({
+  natalSunLongitude,
+  birthDate,
+  asOfDate,
+  timeZoneOffsetMinutes,
+  latitude,
+  longitude,
+}) {
+  const period = getSolarReturnPeriod({
+    targetSunLongitude: natalSunLongitude,
+    birthDate,
+    asOfDate,
+  });
+  const localReturn = new Date(
+    period.start.getTime() + timeZoneOffsetMinutes * 60 * 1000,
+  );
+  const localDate = new Date(
+    Date.UTC(
+      localReturn.getUTCFullYear(),
+      localReturn.getUTCMonth(),
+      localReturn.getUTCDate(),
+    ),
+  );
+  const localTime = `${String(localReturn.getUTCHours()).padStart(2, "0")}:${String(
+    localReturn.getUTCMinutes(),
+  ).padStart(2, "0")}`;
+  const chart = calculateVedicChart({
+    dateOfBirth: localDate,
+    timeOfBirth: localTime,
+    timeZoneOffsetMinutes,
+    latitude,
+    longitude,
+  });
+  if (chart.precision !== "full" || !chart.ascendant) {
+    throw new Error("Could not calculate the Varsha Kundli chart");
+  }
+
+  const ascendantSignIndex = signIndexOf(chart.ascendant.longitude);
+  const houseSignMap = {};
+  for (let house = 1; house <= 12; house++) {
+    houseSignMap[house] = RASHIS[(ascendantSignIndex + house - 1) % 12];
+  }
+  const planetsBySign = {};
+  for (const [name, planet] of Object.entries(chart.planets || {})) {
+    if (!planetsBySign[planet.rashi]) planetsBySign[planet.rashi] = [];
+    planetsBySign[planet.rashi].push({
+      name,
+      degree: planet.degreeInSign,
+      retrograde: Boolean(planet.retrograde),
+    });
+  }
+
+  return {
+    title: "Varsha Kundli",
+    chartType: "Annual Solar Return",
+    method: "Sidereal solar return at the birth location",
+    periodStart: period.start,
+    periodEnd: period.end,
+    asOf: asOfDate,
+    ascendant: {
+      rashi: chart.ascendant.rashi,
+      degreeInSign: chart.ascendant.degreeInSign,
+      lord: RASHI_LORDS[chart.ascendant.rashi],
+    },
+    houses: buildChartRepresentation(houseSignMap, planetsBySign),
+  };
+}
+
 // Calculate Age string (e.g. "0 Y 0 M 1 D")
 function calculateAge(dob, asOf = new Date()) {
   let years = asOf.getUTCFullYear() - dob.getUTCFullYear();
@@ -679,7 +810,7 @@ function calculateAge(dob, asOf = new Date()) {
   return `${years} Y ${months} M ${days} D`;
 }
 
-// Master calculation function: returns all 26 categories
+// Master calculation function: returns every supported Kundli AI category
 async function calculateFullKundli(inputData) {
   const {
     name = "User",
@@ -1023,6 +1154,66 @@ async function calculateFullKundli(inputData) {
     note: "SL: Sign Lord, NL: Nakshatra Lord, SB: Sub Lord, SS: Sub-Sub Lord",
   };
 
+  const occupiedHousesByPlanet = {};
+  const ownedHousesByPlanet = {};
+  for (const [planet, data] of Object.entries(chart.planets || {})) {
+    if (Number.isInteger(data.house)) {
+      occupiedHousesByPlanet[planet] = [data.house];
+    }
+  }
+  for (let house = 1; house <= 12; house++) {
+    const sign = RASHIS[(ascSignIdx + house - 1) % 12];
+    const lord = RASHI_LORDS[sign];
+    if (!ownedHousesByPlanet[lord]) ownedHousesByPlanet[lord] = [];
+    ownedHousesByPlanet[lord].push(house);
+  }
+  const signifiedHouses = (planet) =>
+    [...new Set([
+      ...(occupiedHousesByPlanet[planet] || []),
+      ...(ownedHousesByPlanet[planet] || []),
+    ])].sort((a, b) => a - b);
+  const classicalPlanets = [
+    "Sun",
+    "Moon",
+    "Mars",
+    "Mercury",
+    "Jupiter",
+    "Venus",
+    "Saturn",
+    "Rahu",
+    "Ketu",
+  ];
+  const planetSignifications = classicalPlanets.flatMap((planet) => {
+    const data = chart.planets?.[planet];
+    if (!data) return [];
+    const kp = getKPLords(data.longitude);
+    return [{
+      planet,
+      occupiedHouse: data.house ?? null,
+      planetHouses: signifiedHouses(planet),
+      starLord: kp.nakLordName,
+      starHouses: signifiedHouses(kp.nakLordName),
+      subLord: kp.subLordName,
+      subHouses: signifiedHouses(kp.subLordName),
+      subSubLord: kp.subSubLordName,
+      subSubHouses: signifiedHouses(kp.subSubLordName),
+    }];
+  });
+  const cil_sub_sub = {
+    title: "CIL (Sub Sub)",
+    method: "KP significations derived from natal whole-sign house occupancy and ownership",
+    rows: planetSignifications.map((row) => ({
+      planet: row.planet,
+      starLord: row.starLord,
+      starHouses: row.starHouses,
+      subLord: row.subLord,
+      subHouses: row.subHouses,
+      subSubLord: row.subSubLord,
+      subSubHouses: row.subSubHouses,
+      positionStatus: row.occupiedHouse == null ? [] : [row.occupiedHouse],
+    })),
+  };
+
   // 10. Dasha Balance at Birth
   const dashaBal = calculateDashaBalance(moonLon);
   const balDasaYears = Math.floor(dashaBal.balanceYears);
@@ -1354,7 +1545,9 @@ async function calculateFullKundli(inputData) {
         "Lagna", "Navamsha", "Moon", "Chalit", "Planets", "Planets-Sub",
         "Birth Details", "Panchang", "Avakhada Chakra", "Ghatak and Favourable",
         "Ashtakvarga", "Prastharashtakvarga", "Bhav Madhya", "Friendship",
-        "Shad Bala", "Transit", "KP System"
+        "Shad Bala", "Transit", "KP System",
+        "Nakshatra Nadi", "Chandra Kala Nadi", "Lal Kitab", "Tri Bhagi Dasha",
+        "Lal Kitab Dasha", "CIL (Sub Sub)", "Prediction and Remedies", "Varsha Kundli"
       ]
     }
   };
@@ -1363,7 +1556,7 @@ async function calculateFullKundli(inputData) {
   const dashaTimeline = getDashaTimeline({
     moonSiderealLongitude: moonLon,
     birthDate: utcDate,
-    atDate: new Date(),
+    atDate: now,
   });
   const dasha = {
     title: "Dasha",
@@ -1373,25 +1566,134 @@ async function calculateFullKundli(inputData) {
     pratyantardashas: dashaTimeline.pratyantardashas,
   };
 
-  // 25. Predictions
+  const lal_kitab_dasha = {
+    title: "Lal Kitab Dasha",
+    method:
+      "Vimshottari mahadasha and antardasha dates are shown as a timing reference; interpretations remain tradition-dependent.",
+    current: dashaTimeline.current,
+    periods: dashaTimeline.mahadashas.map((period) => ({
+      planet: period.planet,
+      start: period.start,
+      end: period.end,
+      years: period.years,
+      antardashas: buildSubPeriods(
+        period.start,
+        period.days,
+        period.planet,
+      ),
+    })),
+  };
+
+  // 25. Nakshatra Nadi (Adi / Madhya / Antya from the Moon nakshatra)
+  const nakshatra_nadi = getNakshatraNadiReport({
+    moonNakshatra,
+    moonRashi,
+    ascRashi,
+  });
+  nakshatra_nadi.planetSignifications = planetSignifications;
+
+  // 26. Chandra Kala Nadi (rashi / nadi-amsha reading of the Moon)
+  const chandra_kala_nadi = getChandraKalaNadiReport({
+    moonLon,
+    moonRashi,
+    moonNakshatra,
+    ascRashi,
+  });
+
+  // 27. Lal Kitab (planet-in-house predictions & remedies)
+  const lal_kitab = buildLalKitabReport({ planets: chart.planets });
+
+  // 28. Tri Bhagi Dasha (each mahadasha split into three nakshatra bhagis)
+  const tribhagiTimeline = getTribhagiTimeline({
+    moonSiderealLongitude: moonLon,
+    birthDate: utcDate,
+    atDate: now,
+  });
+  const tri_bhagi_dasha = {
+    title: "Tri Bhagi Dasha",
+    method: tribhagiTimeline.method,
+    balanceAtBirth: balDasaStr,
+    current: tribhagiTimeline.current,
+    mahadashas: tribhagiTimeline.mahadashas,
+  };
+
+  // 29. Predictions
+  const planetaryThemes = {
+    Sun: ["confidence, leadership and purpose", "keep a steady and respectful daily routine"],
+    Moon: ["emotional awareness and care", "make space for rest and open communication"],
+    Mars: ["initiative, courage and action", "pause before reacting and channel energy constructively"],
+    Mercury: ["learning, communication and problem-solving", "check details and communicate clearly"],
+    Jupiter: ["learning, perspective and generosity", "share knowledge while staying open to new information"],
+    Venus: ["relationships, creativity and comfort", "make time for creativity and considerate relationships"],
+    Saturn: ["patience, responsibility and long-term effort", "break large tasks into consistent, manageable steps"],
+    Rahu: ["ambition, experimentation and new experiences", "balance curiosity with careful research"],
+    Ketu: ["reflection, focus and simplifying priorities", "set aside quiet time to review priorities"],
+  };
+  const houseThemes = [
+    "self and personal direction",
+    "family and communication",
+    "effort and learning",
+    "home and inner foundations",
+    "creativity and study",
+    "routines and service",
+    "partnerships and cooperation",
+    "shared responsibilities and personal growth",
+    "learning and broader perspectives",
+    "work and public contribution",
+    "community and long-term goals",
+    "reflection and rest",
+  ];
+  const planetaryReadings = classicalPlanets.flatMap((planet) => {
+    const placement = chart.planets?.[planet];
+    const themes = planetaryThemes[planet];
+    if (!placement || !Number.isInteger(placement.house) || !themes) return [];
+    return [{
+      planet,
+      house: placement.house,
+      sign: placement.rashi,
+      theme: themes[0],
+      reflection:
+        `Traditional astrology associates ${planet} with ${themes[0]}. ` +
+        `Its placement in house ${placement.house} brings attention to ` +
+        `${houseThemes[placement.house - 1]}. Treat this as a reflection, ` +
+        "not a certain prediction.",
+      practice: themes[1],
+    }];
+  });
   const predictions = {
-    title: "Predictions",
+    title: "Prediction and Remedies",
+    disclaimer:
+      "Traditional astrology offers reflective guidance, not guaranteed outcomes or professional advice.",
     nature: `With ${ascRashi} Ascendant and Moon in ${moonRashi}, you have a balanced, intuitive and empathetic disposition.`,
     career: `Your 10th house is governed by ${RASHI_LORDS[RASHIS[(ascSignIdx + 9) % 12]]}, favouring careers in leadership, creative planning, and strategic execution.`,
     finance: `Your 2nd house of wealth is ${RASHIS[(ascSignIdx + 1) % 12]}, indicating steady resource accumulation with disciplined financial management.`,
-    health: `Maintain vitality through proper physical activity, balanced diet, and hydration.`,
+    planetaryReadings,
   };
 
-  // 26. Basic (Overview & Navigation Hub)
+  const varsha_kundli = buildVarshaKundli({
+    natalSunLongitude: sunLon,
+    birthDate: dob,
+    asOfDate: now,
+    timeZoneOffsetMinutes: tzMinutes,
+    latitude: lat,
+    longitude: lon,
+  });
+
+  // 30. Basic (Overview & Navigation Hub)
   const basic = {
     title: "Basic",
     quickCategories: [
       { id: "dasha", title: "Dasha", icon: "clock" },
-      { id: "predictions", title: "Predictions", icon: "book" },
+      { id: "tri_bhagi_dasha", title: "Tri Bhagi Dasha", icon: "clock" },
+      { id: "lal_kitab_dasha", title: "Lal Kitab Dasha", icon: "clock" },
+      { id: "predictions", title: "Prediction and Remedies", icon: "book" },
       { id: "kp_system", title: "KP System", icon: "compass" },
+      { id: "cil_sub_sub", title: "CIL (Sub Sub)", icon: "table_chart" },
       { id: "shodashvarga", title: "Shodashvarga", icon: "grid" },
       { id: "lal_kitab", title: "Lal Kitab", icon: "sun" },
-      { id: "varshphal", title: "Varshphal", icon: "calendar" },
+      { id: "nakshatra_nadi", title: "Nakshatra Nadi", icon: "compass" },
+      { id: "chandra_kala_nadi", title: "Chandra Kala Nadi", icon: "moon" },
+      { id: "varsha_kundli", title: "Varsha Kundli", icon: "calendar" },
     ],
     menuGrid: [
       ["Lagna", "Navamsha"],
@@ -1428,7 +1730,7 @@ async function calculateFullKundli(inputData) {
     }
   }
 
-  // Assemble full 26-screen map
+  // Assemble full 30-screen map
   const categories = {
     new_kundli,
     basic,
@@ -1458,11 +1760,18 @@ async function calculateFullKundli(inputData) {
     ask_questions,
     // Auxiliary
     dasha,
+    nakshatra_nadi,
+    chandra_kala_nadi,
+    lal_kitab,
+    tri_bhagi_dasha,
+    lal_kitab_dasha,
+    cil_sub_sub,
     predictions,
+    varsha_kundli,
     shodashvarga: shodashvargaCharts,
   };
 
-  // Structured ordered list of the 26 screen categories for navigation
+  // Structured ordered list of the Kundli AI screens for navigation
   const navigation = [
     { id: 1, key: "new_kundli", title: "New Kundli", type: "form", description: "Birth details entry" },
     { id: 2, key: "basic", title: "Basic", type: "menu", description: "Overview directory & quick access" },
@@ -1489,7 +1798,15 @@ async function calculateFullKundli(inputData) {
     { id: 23, key: "kp_system", title: "KP System", type: "table", description: "Krishnamurti Paddhati cusps & significators" },
     { id: 24, key: "cloud", title: "Cloud", type: "promo", description: "Cloud sync & Kundli AI+ membership" },
     { id: 25, key: "download_pdf", title: "Download PDF", type: "action", description: "Janam Kundli & Brihat Kundli reports" },
-    { id: 26, key: "ask_questions", title: "Ask Questions", type: "chat", description: "Contextual AI & Astrologer guidance" }
+    { id: 26, key: "ask_questions", title: "Ask Questions", type: "chat", description: "Contextual AI & Astrologer guidance" },
+    { id: 27, key: "nakshatra_nadi", title: "Nakshatra Nadi", type: "table", description: "Adi, Madhya & Antya Nadi from the Moon nakshatra" },
+    { id: 28, key: "chandra_kala_nadi", title: "Chandra Kala Nadi", type: "table", description: "Deva Keralam rashi nadi-amsha reading of the Moon" },
+    { id: 29, key: "lal_kitab", title: "Lal Kitab", type: "card", description: "Planet-in-house predictions & Lal Kitab remedies" },
+    { id: 30, key: "tri_bhagi_dasha", title: "Tri Bhagi Dasha", type: "table", description: "Mahadasha split into three nakshatra bhagis" },
+    { id: 31, key: "lal_kitab_dasha", title: "Lal Kitab Dasha", type: "table", description: "Dasha periods and antardasha date ranges" },
+    { id: 32, key: "cil_sub_sub", title: "CIL (Sub Sub)", type: "table", description: "Planet, star, sub, sub-sub and house significations" },
+    { id: 33, key: "predictions", title: "Prediction and Remedies", type: "card", description: "Chart-based traditional reflections and practical practices" },
+    { id: 34, key: "varsha_kundli", title: "Varsha Kundli", type: "chart", description: "Annual sidereal solar-return chart for the birth location" }
   ];
 
   return {
@@ -1504,7 +1821,7 @@ async function calculateFullKundli(inputData) {
       nakshatra: `${moonNakshatra.name} (${moonNakshatra.pada})`,
       mangalDosh: mangalDoshStatus,
       ayanamsa: `N.C.Lahiri (${formatDMS(chart.ayanamshaUsed)})`,
-      totalCategories: 26,
+      totalCategories: navigation.length,
     },
     navigation,
     categories,

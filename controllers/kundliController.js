@@ -1,10 +1,10 @@
 // Kundli Controller
-// Complete API implementation for the 26-screen Vedic Kundli flow.
+// Complete API implementation for the 34-screen Vedic Kundli flow.
 //
 // Endpoints:
-// - POST /api/kundli/calculate: Calculates complete 26-category Kundli from birth details
-// - GET  /api/kundli/my-kundli: Retrieves 26-category Kundli for logged-in user
-// - GET  /api/kundli/categories: Returns list and descriptions of all 26 categories
+// - POST /api/kundli/calculate: Calculates complete Kundli from birth details
+// - GET  /api/kundli/my-kundli: Retrieves the complete Kundli for logged-in user
+// - GET  /api/kundli/categories: Returns the screen catalog
 // - POST /api/kundli/chat: Category-aware contextual AI Astrologer Q&A assistant
 
 const mongoose = require("mongoose");
@@ -65,6 +65,45 @@ const generateGroundedCategoryInterpretation = (category, question, chartSummary
       return `Your birth Panchang indicates birth during the auspicious Tithi and Yoga. Panchang represents the five limbs of time that govern life energy. In context of your query "${question}", timing key activities in harmony with your favourable astrological weekdays and nakshatra enhances prosperity.`;
     case "ghatak_and_favourable":
       return `Based on your Janma Rashi ${rashi}, your favourable points include auspicious lucky numbers, friendly signs, and gemstone recommendations. Conversely, Ghatak factors indicate days and combinations requiring mindful caution. Regarding "${question}", leveraging your favourable days supports successful endeavors.`;
+    case "nakshatra_nadi": {
+      const nadi = categoryData?.moon?.nadi || categoryData?.native?.nadi || "your Nadi";
+      const nak = categoryData?.moon?.nakshatra || nakshatra;
+      return `Your Moon sits in ${nak} nakshatra, which belongs to ${nadi}. The three nadis — Adi (Vata), Madhya (Pitta) and Antya (Kapha) — are prakriti groupings used both for individual reading and for Nadi Dosha in Ashtakoot matching. Regarding "${question}", your nadi suggests reading this through your constitution and its remedies rather than as a standalone good or bad sign.`;
+    }
+    case "chandra_kala_nadi": {
+      const amsha = categoryData?.nadiAmsha;
+      const moonLine = amsha
+        ? `the Moon occupies nadi amsha ${amsha.index} of ${amsha.total} (${amsha.bhaga}) in ${categoryData?.moon?.rashi || rashi}, placing it in ${amsha.nadi}`
+        : `the Moon is in ${rashi}`;
+      return `In Chandra Kala Nadi, each rashi is divided into 150 nadi amshas of 0.2°, each split into Poorvabhaga and Uttarbhaga; here ${moonLine}. Regarding "${question}", read the answer through the running nadi amsha together with your nakshatra nadi for timing and temperament.`;
+    }
+    case "lal_kitab": {
+      const count = Array.isArray(categoryData?.planets) ? categoryData.planets.length : 0;
+      return `Your Lal Kitab reading covers ${count || "nine"} planetary placements, each read from the house it occupies with its own household remedy — charity, service and simple daily observance. Regarding "${question}", Lal Kitab treats a planet through its house first, so the remedy should target the life area of that house.`;
+    }
+    case "tri_bhagi_dasha": {
+      const current = categoryData?.current;
+      const bhagi = current?.bhagi?.nakshatra || "the running nakshatra";
+      return `Tri Bhagi Dasha divides every Vimshottari mahadasha into three equal bhagis, one for each nakshatra the mahadasha lord rules. Currently ${bhagi} bhagi is running${current?.mahadasha?.planet ? ` inside ${current.mahadasha.planet} mahadasha` : ""}. Regarding "${question}", the bhagi explains why events land slightly before or after an antardasha boundary.`;
+    }
+    case "lal_kitab_dasha": {
+      const periods = Array.isArray(categoryData?.periods)
+        ? categoryData.periods.length
+        : 0;
+      return `The Lal Kitab Dasha view contains ${periods} calculated mahadasha periods with antardasha dates. Its timing reference is based on the Moon's birth nakshatra; traditional interpretations can vary. Regarding "${question}", use the displayed dates as a reference rather than a guaranteed prediction.`;
+    }
+    case "cil_sub_sub": {
+      const rows = Array.isArray(categoryData?.rows) ? categoryData.rows : [];
+      return `CIL (Sub Sub) shows ${rows.length} planetary rows with their KP star, sub, sub-sub and house-signification data. Regarding "${question}", use the house lists and the corresponding natal chart together; the table is a traditional interpretive aid.`;
+    }
+    case "predictions": {
+      return `Your Prediction and Remedies section is based on the planetary placements in your calculated chart. It offers traditional reflection prompts and practical habits, not certain outcomes or professional advice. Regarding "${question}", consider the placement and house themes shown in the report.`;
+    }
+    case "varsha_kundli": {
+      const periodStart = categoryData?.periodStart;
+      const periodEnd = categoryData?.periodEnd;
+      return `Your Varsha Kundli is the annual chart calculated for the sidereal solar return at your birth location${periodStart && periodEnd ? `, covering ${new Date(periodStart).toISOString().slice(0, 10)} to ${new Date(periodEnd).toISOString().slice(0, 10)}` : ""}. Regarding "${question}", treat annual-chart interpretations as traditional guidance rather than certainty.`;
+    }
     default:
       return `According to your Vedic birth chart with ${lagna} Lagna and ${rashi} Moon (${nakshatra} nakshatra), your planetary alignments indicate steady progress and resilience. Regarding "${question}", alignment with your natural planetary strengths will yield constructive results.`;
   }
@@ -72,7 +111,7 @@ const generateGroundedCategoryInterpretation = (category, question, chartSummary
 
 /**
  * POST /api/kundli/calculate
- * Calculate complete 26-category Kundli from birth details.
+ * Calculate complete 30-category Kundli from birth details.
  * Supports optional category filtering: ?category=ashtakvarga or body.category
  */
 const calculateKundli = async (req, res, next) => {
@@ -195,7 +234,7 @@ const calculateKundli = async (req, res, next) => {
 
 /**
  * GET /api/kundli/my-kundli
- * Retrieve complete 26-category Kundli for authenticated user from saved Horoscope
+ * Retrieve complete 30-category Kundli for authenticated user from saved Horoscope
  */
 const getMyKundli = async (req, res, next) => {
   try {
@@ -258,7 +297,7 @@ const getMyKundli = async (req, res, next) => {
 
 /**
  * GET /api/kundli/categories
- * Returns the catalog of all 26 screen categories in the Kundli flow
+ * Returns the catalog of all 34 screen categories in the Kundli flow
  */
 const getCategories = (req, res) => {
   const categoriesList = [
@@ -287,7 +326,15 @@ const getCategories = (req, res) => {
     { id: 23, key: "kp_system", title: "KP System", type: "table", description: "Krishnamurti Paddhati cusps, planet significators and ruling planets" },
     { id: 24, key: "cloud", title: "Cloud", type: "promo", description: "AstroSage AI Cloud synchronization & Kundli AI+ membership" },
     { id: 25, key: "download_pdf", title: "Download PDF", type: "action", description: "50-page Janam Kundli & 250+ page Brihat Kundli reports catalogue" },
-    { id: 26, key: "ask_questions", title: "Ask Questions", type: "chat", description: "Contextual AI Astrologer Q&A and Premium Astrologer consultation" }
+    { id: 26, key: "ask_questions", title: "Ask Questions", type: "chat", description: "Contextual AI Astrologer Q&A and Premium Astrologer consultation" },
+    { id: 27, key: "nakshatra_nadi", title: "Nakshatra Nadi", type: "table", description: "Adi, Madhya & Antya Nadi from the Moon nakshatra with traits, compatibility and remedies" },
+    { id: 28, key: "chandra_kala_nadi", title: "Chandra Kala Nadi", type: "table", description: "Deva Keralam rashi nadi-amsha reading of the Moon (150 nadi amshas per rashi)" },
+    { id: 29, key: "lal_kitab", title: "Lal Kitab", type: "card", description: "Planet-in-house predictions, house charities and classic Lal Kitab remedies" },
+    { id: 30, key: "tri_bhagi_dasha", title: "Tri Bhagi Dasha", type: "table", description: "Each Vimshottari mahadasha split into three equal nakshatra bhagis" },
+    { id: 31, key: "lal_kitab_dasha", title: "Lal Kitab Dasha", type: "table", description: "Dasha periods and antardasha date ranges" },
+    { id: 32, key: "cil_sub_sub", title: "CIL (Sub Sub)", type: "table", description: "Planet, star, sub, sub-sub and house significations" },
+    { id: 33, key: "predictions", title: "Prediction and Remedies", type: "card", description: "Chart-based traditional reflections and practical practices" },
+    { id: 34, key: "varsha_kundli", title: "Varsha Kundli", type: "chart", description: "Annual sidereal solar-return chart for the birth location" }
   ];
 
   return res.status(200).json({

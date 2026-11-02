@@ -38,7 +38,7 @@
 //   different planet from the chart — the birth nakshatra has to be the one
 //   printed on the chart, or the dasha and the chart contradict each other.
 
-const { RASHIS, RASHI_LORDS, getNakshatra } = require("./vedicAstrologyService");
+const { RASHIS, RASHI_LORDS, NAKSHATRAS, getNakshatra } = require("./vedicAstrologyService");
 
 // --- Vimshottari dasha lengths, in years. Sums to exactly 120. ---
 const DASHA_YEARS = {
@@ -272,6 +272,130 @@ const getDashaTimeline = ({ moonSiderealLongitude, birthDate, atDate = new Date(
 };
 
 /**
+ * Tri Bhagi Dasha — each mahadasha divided into THREE equal parts (bhagis),
+ * one for each of the three nakshatras that the mahadasha lord rules.
+ *
+ * Every Vimshottari graha rules exactly 3 of the 27 nakshatras, so splitting
+ * its mahadasha into thirds produces a complete 27-nakshatra timing cycle
+ * while preserving the original 120-year Vimshottari span. Example: the
+ * 6-year Sun mahadasha runs Krittika (2y) -> Uttara Phalguni (2y) ->
+ * Uttara Ashadha (2y), in zodiacal order.
+ *
+ * The bhagi answers the finer question "which nakshatra field is carrying
+ * the time right now?", which is why events sometimes land slightly before
+ * or after an antardasha boundary.
+ *
+ * @param {object} params
+ * @param {number} params.moonSiderealLongitude
+ * @param {Date} params.birthDate
+ * @param {Date} [params.atDate=new Date()]
+ * @param {number} [params.mahadashaCount=12]
+ * @returns {{asOf: Date, method: string, balance: object,
+ *            mahadashas: Array<object>, current: object|null}}
+ */
+const getTribhagiTimeline = ({
+  moonSiderealLongitude,
+  birthDate,
+  atDate = new Date(),
+  mahadashaCount = 12,
+}) => {
+  const at = atDate instanceof Date ? atDate : new Date(atDate);
+  if (Number.isNaN(at.getTime())) throw new TypeError("getTribhagiTimeline requires a valid atDate");
+
+  const { balance, mahadashas } = buildMahadashas({
+    moonSiderealLongitude,
+    birthDate,
+    count: mahadashaCount,
+  });
+
+  // The three nakshatras ruled by a graha, in zodiacal order (index i of
+  // NAKSHATRAS maps to NAKSHATRA_LORDS[i] by construction).
+  const bhagiNakshatras = (planet) =>
+    NAKSHATRAS.map((name, index) => ({ name, index })).filter(
+      (nak) => nakshatraLord(nak.index) === planet,
+    );
+
+  const withBhagis = mahadashas.map((mahadasha) => {
+    const nakshatras = bhagiNakshatras(mahadasha.planet);
+    const bhagiDays = mahadasha.days / 3;
+    const bhagis = nakshatras.map((nak, i) => ({
+      nakshatra: nak.name,
+      nakshatraIndex: nak.index,
+      lord: mahadasha.planet,
+      start: addDays(mahadasha.start, bhagiDays * i),
+      end: addDays(mahadasha.start, bhagiDays * (i + 1)),
+      days: round(bhagiDays, 2),
+      years: round(bhagiDays / DAYS_PER_DASHA_YEAR, 4),
+      isPartialAtBirth: Boolean(mahadasha.isPartialAtBirth && i === 0),
+    }));
+    return {
+      planet: mahadasha.planet,
+      start: mahadasha.start,
+      end: mahadasha.end,
+      days: mahadasha.days,
+      years: mahadasha.years,
+      isPartialAtBirth: Boolean(mahadasha.isPartialAtBirth),
+      bhagis,
+    };
+  });
+
+  const currentMahadasha = findContaining(withBhagis, at);
+  if (!currentMahadasha) {
+    return {
+      asOf: at,
+      method: "Tri Bhagi Dasha — each Vimshottari mahadasha split into three equal bhagis, one per nakshatra ruled by the mahadasha lord.",
+      balance,
+      mahadashas: withBhagis,
+      current: null,
+    };
+  }
+
+  const currentBhagi = findContaining(currentMahadasha.bhagis, at);
+  const antardashas = buildSubPeriods(
+    currentMahadasha.start,
+    currentMahadasha.days,
+    currentMahadasha.planet,
+  );
+  const currentAntardasha = findContaining(antardashas, at);
+
+  return {
+    asOf: at,
+    method:
+      "Tri Bhagi Dasha — each Vimshottari mahadasha split into three equal bhagis, one per nakshatra ruled by the mahadasha lord.",
+    balance,
+    mahadashas: withBhagis,
+    current: {
+      mahadasha: {
+        planet: currentMahadasha.planet,
+        start: currentMahadasha.start,
+        end: currentMahadasha.end,
+        years: currentMahadasha.years,
+        isPartialAtBirth: currentMahadasha.isPartialAtBirth,
+      },
+      bhagi: currentBhagi
+        ? {
+            nakshatra: currentBhagi.nakshatra,
+            nakshatraIndex: currentBhagi.nakshatraIndex,
+            lord: currentBhagi.lord,
+            start: currentBhagi.start,
+            end: currentBhagi.end,
+            years: currentBhagi.years,
+            isPartialAtBirth: currentBhagi.isPartialAtBirth,
+          }
+        : null,
+      antardasha: currentAntardasha
+        ? {
+            planet: currentAntardasha.planet,
+            start: currentAntardasha.start,
+            end: currentAntardasha.end,
+            years: currentAntardasha.years,
+          }
+        : null,
+    },
+  };
+};
+
+/**
  * Which houses the running dashas activate — the concrete form of the course
  * rule "Never forget to add the dasha": a malefic sitting in the 6th, 7th, 8th
  * or 12th doesn't cause trouble by itself, but ITS dasha does. Cross-referencing
@@ -328,5 +452,6 @@ module.exports = {
   buildSubPeriods,
   buildMahadashas,
   getDashaTimeline,
+  getTribhagiTimeline,
   getDashaHouseActivations,
 };
