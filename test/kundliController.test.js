@@ -42,6 +42,24 @@ test("Kundli router exposes the app's calculate, saved-chart, and chat paths", (
       (route) => route.path === "/chat" && route.methods.includes("post"),
     ),
   );
+  assert.ok(
+    routes.some(
+      (route) =>
+        route.path === "/saved-kundlis" && route.methods.includes("get"),
+    ),
+  );
+  assert.ok(
+    routes.some(
+      (route) =>
+        route.path === "/saved-matches" && route.methods.includes("get"),
+    ),
+  );
+  assert.ok(
+    routes.some(
+      (route) =>
+        route.path === "/saved-matches" && route.methods.includes("post"),
+    ),
+  );
 });
 
 test("calculate accepts the Flutter birth-details payload and returns chart data", async () => {

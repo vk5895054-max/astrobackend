@@ -3,6 +3,14 @@ const { protect, optionalProtect } = require("../middlewares/authMiddleware");
 const { uploadOptionalImages } = require("../middlewares/uploadMiddleware");
 const { kundliMatch } = require("../controllers/kundliMatchController");
 const {
+  createSavedKundli,
+  deleteSavedKundli,
+  getSavedKundli,
+  listSavedKundlis,
+  listSavedMatches,
+  saveKundliMatch,
+} = require("../controllers/kundliSavedController");
+const {
   calculateKundli,
   getMyKundli,
   getCategories,
@@ -21,5 +29,11 @@ router.post("/chat", optionalProtect, uploadOptionalImages, chatKundli);
 // Authenticated user endpoints
 router.get("/my-kundli", protect, getMyKundli);
 router.post("/match", protect, kundliMatch);
+router.get("/saved-kundlis", protect, listSavedKundlis);
+router.post("/saved-kundlis", protect, createSavedKundli);
+router.get("/saved-kundlis/:id", protect, getSavedKundli);
+router.delete("/saved-kundlis/:id", protect, deleteSavedKundli);
+router.get("/saved-matches", protect, listSavedMatches);
+router.post("/saved-matches", protect, saveKundliMatch);
 
 module.exports = router;
