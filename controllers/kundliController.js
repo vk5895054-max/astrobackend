@@ -32,7 +32,6 @@ const parseDateOfBirth = (val) => {
     if (partsDash) {
       const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
       const d = Number(partsDash[1]);
-    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },
       const m = months.indexOf(partsDash[2].toLowerCase());
       const y = Number(partsDash[3]);
       if (m !== -1) {
@@ -332,8 +331,7 @@ const getCategories = (req, res) => {
     { id: 28, key: "chandra_kala_nadi", title: "Chandra Kala Nadi", type: "table", description: "Deva Keralam rashi nadi-amsha reading of the Moon (150 nadi amshas per rashi)" },
     { id: 29, key: "lal_kitab", title: "Lal Kitab", type: "card", description: "Planet-in-house predictions, house charities and classic Lal Kitab remedies" },
     { id: 30, key: "tri_bhagi_dasha", title: "Tri Bhagi Dasha", type: "table", description: "Each Vimshottari mahadasha split into three equal nakshatra bhagis" },
-    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },
-    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },
+    { id: 31, key: "lal_kitab_dasha", title: "Lal Kitab Dasha", type: "table", description: "Dasha periods and antardasha date ranges" },
     { id: 32, key: "cil_sub_sub", title: "CIL (Sub Sub)", type: "table", description: "Planet, star, sub, sub-sub and house significations" },
     { id: 33, key: "predictions", title: "Prediction and Remedies", type: "card", description: "Chart-based traditional reflections and practical practices" },
     { id: 34, key: "varsha_kundli", title: "Varsha Kundli", type: "chart", description: "Annual sidereal solar-return chart for the birth location" }
