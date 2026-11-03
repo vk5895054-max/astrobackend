@@ -32,6 +32,7 @@ const parseDateOfBirth = (val) => {
     if (partsDash) {
       const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
       const d = Number(partsDash[1]);
+    { id: 35, key: "lal_kitab_varshphal", title: "Lal Kitab Varsha Phal", type: "table", description: "Lal Kitab annual horoscope based on solar return at birth location" },
       const m = months.indexOf(partsDash[2].toLowerCase());
       const y = Number(partsDash[3]);
       if (m !== -1) {

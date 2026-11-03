@@ -37,3 +37,15 @@ router.get("/saved-matches", protect, listSavedMatches);
 router.post("/saved-matches", protect, saveKundliMatch);
 
 module.exports = router;
+
+router.get("/lal-kitab-varshphal", optionalProtect, (req, res) => {
+  const categoriesList = req.app.get("categoriesList");
+  const category = categoriesList.find(c => c.key === "lal_kitab_varshphal");
+  if (category) {
+    return res.status(200).json({
+      success: true,
+      data: category
+    });
+  }
+  return res.status(404).json({ success: false, message: "Category not found" });
+});
