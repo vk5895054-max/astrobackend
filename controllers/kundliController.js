@@ -9,7 +9,11 @@
 
 const mongoose = require("mongoose");
 const Horoscope = require("../models/horoscope");
-const { calculateFullKundli, parseNormalizedTime } = require("../services/kundliCalculationService");
+const {
+  calculateFullKundli,
+  calculateLalKitabVarshaPhal: buildLalKitabVarshaPhal,
+  parseNormalizedTime,
+} = require("../services/kundliCalculationService");
 const { resolveBirthLocationFromPlace } = require("../services/birthLocationService");
 const { askAstroQuestion } = require("../services/rag/ragService");
 const { buildChartContextForQA } = require("../services/vedicAstrologyService");
@@ -225,6 +229,95 @@ const calculateKundli = async (req, res, next) => {
         summary: kundliResult.summary,
         navigation: kundliResult.navigation,
         categories: kundliResult.categories,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/kundli/lal-kitab-varsha-phal
+ * Calculate the selected year's annual solar-return chart and Lal Kitab report.
+ */
+const calculateLalKitabVarshaPhal = async (req, res, next) => {
+  try {
+    const {
+      name,
+      birthDate,
+      dateOfBirth,
+      birthTime,
+      timeOfBirth,
+      birthPlace,
+      placeOfBirth,
+      place,
+      latitude,
+      longitude,
+      timeZoneOffsetMinutes,
+      year,
+    } = req.body || {};
+    const parsedDob = parseDateOfBirth(birthDate || dateOfBirth);
+    if (!parsedDob) {
+      return res.status(400).json({
+        success: false,
+        message: "dateOfBirth is required and must be a valid date",
+      });
+    }
+
+    const selectedYear = Number(year);
+    if (!Number.isInteger(selectedYear) || selectedYear < parsedDob.getUTCFullYear() || selectedYear > 2200) {
+      return res.status(400).json({
+        success: false,
+        message: "year must be an integer between the birth year and 2200",
+      });
+    }
+
+    const rawLatitude = Number(latitude);
+    const rawLongitude = Number(longitude);
+    let lat = rawLatitude;
+    let lon = rawLongitude;
+    let tzMinutes = Number.isFinite(Number(timeZoneOffsetMinutes))
+      ? Number(timeZoneOffsetMinutes)
+      : 330;
+    let placeName = String(birthPlace || placeOfBirth || place || "Agra").trim();
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      const resolved = await resolveBirthLocationFromPlace(placeName, parsedDob);
+      if (!resolved) {
+        return res.status(422).json({
+          success: false,
+          message: "Could not resolve the birth location; provide valid latitude and longitude",
+        });
+      }
+      lat = resolved.latitude;
+      lon = resolved.longitude;
+      tzMinutes = resolved.timeZoneOffsetMinutes;
+      placeName = resolved.placeOfBirth || placeName;
+    }
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180 || Math.abs(tzMinutes) > 840) {
+      return res.status(400).json({
+        success: false,
+        message: "Birth coordinates or time-zone offset are outside the valid range",
+      });
+    }
+
+    const parsedTime = parseNormalizedTime(birthTime || timeOfBirth || "12:00:00");
+    const data = buildLalKitabVarshaPhal({
+      dateOfBirth: parsedDob,
+      timeOfBirth: parsedTime.formatted24,
+      timeZoneOffsetMinutes: tzMinutes,
+      latitude: lat,
+      longitude: lon,
+      year: selectedYear,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Lal Kitab Varshphal calculated successfully",
+      data: {
+        name: String(name || "User").trim(),
+        place: placeName,
+        ...data,
       },
     });
   } catch (error) {
@@ -505,6 +598,7 @@ const chatKundli = async (req, res, next) => {
 
 module.exports = {
   calculateKundli,
+  calculateLalKitabVarshaPhal,
   getMyKundli,
   getCategories,
   chatKundli,

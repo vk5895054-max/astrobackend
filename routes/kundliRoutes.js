@@ -12,6 +12,7 @@ const {
 } = require("../controllers/kundliSavedController");
 const {
   calculateKundli,
+  calculateLalKitabVarshaPhal,
   getMyKundli,
   getCategories,
   chatKundli,
@@ -21,6 +22,7 @@ const router = express.Router();
 
 // Public / Guest accessible endpoints (supports optional token for auto-saving)
 router.post("/calculate", optionalProtect, calculateKundli);
+router.post("/lal-kitab-varsha-phal", optionalProtect, calculateLalKitabVarshaPhal);
 router.get("/categories", getCategories);
 // Multipart form-data with optional chart images — JSON bodies (where
 // birthDetails is an object) pass through the middleware untouched.

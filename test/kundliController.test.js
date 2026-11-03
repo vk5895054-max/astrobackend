@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const kundliRoutes = require("../routes/kundliRoutes");
 const {
   calculateKundli,
+  calculateLalKitabVarshaPhal,
   getCategories,
 } = require("../controllers/kundliController");
 
@@ -30,6 +31,12 @@ test("Kundli router exposes the app's calculate, saved-chart, and chat paths", (
   assert.ok(
     routes.some(
       (route) => route.path === "/calculate" && route.methods.includes("post"),
+    ),
+  );
+  assert.ok(
+    routes.some(
+      (route) =>
+        route.path === "/lal-kitab-varsha-phal" && route.methods.includes("post"),
     ),
   );
   assert.ok(
@@ -120,6 +127,63 @@ test("calculate accepts the Flutter birth-details payload and returns chart data
   assert.ok(payload.data.categories.lal_kitab_dasha.periods.length > 0);
   assert.equal(payload.data.categories.predictions.planetaryReadings.length, 9);
   assert.equal(payload.data.categories.varsha_kundli.houses.length, 12);
+});
+
+test("Lal Kitab Varshphal calculates an annual chart for the requested year", async () => {
+  let status = 200;
+  let payload;
+  const res = {
+    status(code) {
+      status = code;
+      return res;
+    },
+    json(data) {
+      payload = data;
+      return res;
+    },
+  };
+
+  await calculateLalKitabVarshaPhal({
+    body: { ...requestBody, year: 2026 },
+  }, res, (error) => {
+    throw error;
+  });
+
+  assert.equal(status, 200);
+  assert.equal(payload.success, true);
+  assert.equal(payload.data.year, 2026);
+  assert.match(payload.data.startDate, /^2026-/);
+  assert.equal(payload.data.chart.houses.length, 12);
+  assert.ok(payload.data.ascendantSign);
+  assert.ok(payload.data.ascendantLord);
+  assert.ok(payload.data.planetPositions.Sun);
+  assert.ok(payload.data.predictions.length > 0);
+  assert.ok(payload.data.remedies.length > 0);
+});
+
+test("Lal Kitab Varshphal rejects a year before the birth year", async () => {
+  let status = 200;
+  let payload;
+  const res = {
+    status(code) {
+      status = code;
+      return res;
+    },
+    json(data) {
+      payload = data;
+      return res;
+    },
+  };
+
+  await calculateLalKitabVarshaPhal({
+    body: { ...requestBody, year: 1994 },
+  }, res, (error) => {
+    throw error;
+  });
+
+  assert.equal(status, 400);
+  assert.equal(payload.success, false);
+  assert.match(payload.message, /year must be an integer/);
 });
 
 test("category catalog includes the added Kundli AI reports", () => {

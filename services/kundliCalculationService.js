@@ -793,6 +793,112 @@ function buildVarshaKundli({
   };
 }
 
+function calculateLalKitabVarshaPhal({
+  dateOfBirth,
+  timeOfBirth,
+  timeZoneOffsetMinutes,
+  latitude,
+  longitude,
+  year,
+}) {
+  const birthDate = dateOfBirth instanceof Date ? dateOfBirth : new Date(dateOfBirth);
+  const natalChart = calculateVedicChart({
+    dateOfBirth: birthDate,
+    timeOfBirth,
+    timeZoneOffsetMinutes,
+    latitude,
+    longitude,
+  });
+  const natalSunLongitude = natalChart.planets?.Sun?.longitude;
+  if (!Number.isFinite(natalSunLongitude)) {
+    throw new Error("Could not calculate the natal Sun position");
+  }
+
+  const asOfDate = new Date(Date.UTC(
+    year,
+    birthDate.getUTCMonth(),
+    birthDate.getUTCDate() + 7,
+    12,
+  ));
+  const chart = buildVarshaKundli({
+    natalSunLongitude,
+    birthDate,
+    asOfDate,
+    timeZoneOffsetMinutes,
+    latitude,
+    longitude,
+  });
+  const annualPlanets = {};
+  const planetPositions = {};
+  for (const house of chart.houses) {
+    for (const planet of house.planets) {
+      annualPlanets[planet.name] = {
+        house: house.house,
+        rashi: house.sign,
+        retrograde: planet.retrograde,
+      };
+      planetPositions[planet.name] = {
+        house: house.house,
+        sign: house.sign,
+        degreeInSign: planet.degree,
+        retrograde: planet.retrograde,
+      };
+    }
+  }
+
+  const lalKitabReport = buildLalKitabReport({ planets: annualPlanets });
+  const localDate = (date, offset, subtractDay = false) => {
+    const adjusted = new Date(
+      date.getTime() + offset * 60 * 1000 - (subtractDay ? 24 * 60 * 60 * 1000 : 0),
+    );
+    return adjusted.toISOString().slice(0, 10);
+  };
+  const periodStartLocal = new Date(
+    chart.periodStart.getTime() + timeZoneOffsetMinutes * 60 * 1000,
+  );
+  let age = periodStartLocal.getUTCFullYear() - birthDate.getUTCFullYear();
+  if (
+    periodStartLocal.getUTCMonth() < birthDate.getUTCMonth() ||
+    (periodStartLocal.getUTCMonth() === birthDate.getUTCMonth() &&
+      periodStartLocal.getUTCDate() < birthDate.getUTCDate())
+  ) {
+    age -= 1;
+  }
+  age = Math.max(0, age);
+
+  return {
+    year,
+    ageRange: { from: age, to: age + 1 },
+    startDate: localDate(chart.periodStart, timeZoneOffsetMinutes),
+    endDate: localDate(chart.periodEnd, timeZoneOffsetMinutes, true),
+    ascendantSign: chart.ascendant.rashi,
+    ascendantLord: chart.ascendant.lord,
+    planetPositions,
+    chart: {
+      ...chart,
+      title: "Lal Kitab Varshphal",
+      key: "lal_kitab_varshphal",
+      short: "Varshphal",
+      varga: 1,
+      ascendantSign: chart.ascendant.rashi,
+      ascendantLord: chart.ascendant.lord,
+    },
+    predictions: lalKitabReport.planets.map((entry) => ({
+      planet: entry.planet,
+      house: entry.house,
+      lifeArea: entry.lifeArea,
+      prediction: entry.prediction,
+      status: entry.status,
+    })),
+    remedies: lalKitabReport.planets.map((entry) => ({
+      planet: entry.planet,
+      house: entry.house,
+      remedy: entry.remedy,
+      avoid: entry.avoid,
+    })),
+  };
+}
+
 // Calculate Age string (e.g. "0 Y 0 M 1 D")
 function calculateAge(dob, asOf = new Date()) {
   let years = asOf.getUTCFullYear() - dob.getUTCFullYear();
@@ -1831,6 +1937,7 @@ async function calculateFullKundli(inputData) {
 
 module.exports = {
   calculateFullKundli,
+  calculateLalKitabVarshaPhal,
   formatDMS,
   parseNormalizedTime,
   getKPLords,
