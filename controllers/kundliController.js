@@ -596,10 +596,125 @@ const chatKundli = async (req, res, next) => {
   }
 };
 
+
+  async function myChart(req, res, next) {
+    try {
+      // If user is authenticated, try to find their Human Design chart
+      if (req.user && req.user._id) {
+        const chart = await HumanDesignChart.findOne({ user: req.user._id });
+        if (chart) {
+          return res.status(200).json({
+            success: true,
+            data: chart,
+          });
+        }
+      }
+
+      // If no saved chart, generate one based on birth details from query/body
+      const {
+        name,
+        dateOfBirth,
+        timeOfBirth,
+        place,
+        gender,
+        latitude,
+        longitude,
+        timeZoneOffsetMinutes,
+      } = req.body || req.query;
+
+      // If we have birth data, generate a chart
+      if (dateOfBirth) {
+        const parsedDob = parseDateOfBirth(dateOfBirth);
+        const rawTob = timeOfBirth || "12:00:00";
+        const parsedTime = parseNormalizedTime(rawTob);
+        let lat = Number(latitude);
+        let lon = Number(longitude);
+        let tzMinutes = Number.isFinite(Number(timeZoneOffsetMinutes)) ? Number(timeZoneOffsetMinutes) : 330;
+        let placeName = String(place || "").trim();
+
+        // Generate chart
+        const chartData = await calculateFullKundli({
+          name: name || "User",
+          dateOfBirth: parsedDob ? parsedDob.toISOString().split("T")[0] : undefined,
+          timeOfBirth: parsedTime.original,
+          place: placeName || "Unknown Place",
+          gender: gender || "Unknown",
+          latitude: lat,
+          longitude: lon,
+          timeZoneOffsetMinutes: tzMinutes,
+        });
+
+        // Save to database if user is authenticated
+        if (req.user && req.user._id) {
+          const existing = await HumanDesignChart.findOne({ user: req.user._id });
+          if (!existing) {
+            const newChart = new HumanDesignChart({
+              user: req.user._id,
+              ...chartData,
+            });
+            await newChart.save();
+          }
+        }
+
+        return res.status(200).json({
+          success: true,
+          data: chartData,
+        });
+      }
+
+      // No birth data provided - return sample/template structure
+      return res.status(200).json({
+        success: true,
+        data: {
+          type: "manifestingGenerator",
+          profile: "1/3",
+          authority: "Sacral",
+          strategy: "To respond then inform",
+          notSelfTheme: "Frustration",
+          centers: [
+            { name: "Crown", defined: false, keywords: ["inspiration", "mental pressure", "confusion"] },
+            { name: "Ajna", defined: false, keywords: ["thoughts", "ideas", "insights"] },
+            { name: "Throat", defined: true, keywords: ["communication", "expression", "conversations"] },
+            { name: "G", defined: true, keywords: ["direction", "love"] },
+            { name: "Heart/Ego", defined: false, keywords: ["willpower", "vitality", "resistance"] },
+            { name: "Sacral", defined: true, keywords: ["life force", "endurance", "work capacity"] },
+            { name: "Solar Plexus", defined: false, keywords: ["emotions", "feelings", "intuition"] },
+            { name: "Spleen", defined: false, keywords: ["health", "immunity", "survival"] },
+            { name: "Root", defined: true, keywords: ["adrenaline", "stress", "drive"] },
+          ],
+          gates: [
+            { number: 1, name: "The Gate of the Explorer" },
+            { number: 2, name: "The Gate of Receptivity" },
+            { number: 3, name: "The Gate of Resistance" },
+            { number: 4, name: "The Gate of Purpose" },
+            { number: 5, name: "The Gate of Fixed Abilities" },
+            { number: 6, name: "The Gate of Conflict" },
+          ],
+          channels: [
+            { id: "20-34", name: "Channel of Keeping Busy", isLoveSection: true },
+            { id: "28-38", name: "Channel of Struggle", isLoveSection: true },
+            { id: "47-64", name: "Channel of Abstract Thinking", isLoveSection: true },
+          ],
+          personality: [
+            { planet: "Sun", gate: 59, line: 3 },
+            { planet: "Earth", gate: 26, line: 2 },
+            { planet: "Moon", gate: 59, line: 2 },
+          ],
+          design: [
+            { planet: "Sun", gate: 6, line: 2 },
+            { planet: "Earth", gate: 47, line: 2 },
+          ],
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 module.exports = {
   calculateKundli,
   calculateLalKitabVarshaPhal,
   getMyKundli,
   getCategories,
   chatKundli,
+  myChart,
 };

@@ -50,4 +50,6 @@ router.get("/lal-kitab-varshphal", optionalProtect, (req, res) => {
     });
   }
   return res.status(404).json({ success: false, message: "Category not found" });
+
+router.post("/my-chart", optionalProtect, myChart);
 });
