@@ -115,6 +115,7 @@ app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/astrologer", require("./routes/astrologerDashboardRoutes"));
 app.use("/api/astro-qa", require("./routes/astroQARoutes"));
 app.use("/api/numerology", require("./routes/numerologyRoutes"));
+app.use("/api/vastu", require("./routes/vastuRoutes"));
 app.use("/api/kundli", require("./routes/kundliRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/health", require("./routes/healthRoutes"));
