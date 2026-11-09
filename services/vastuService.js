@@ -202,6 +202,13 @@ const buildPrompt = ({ notes, homeType, facing }) => {
   return lines.join("\n");
 };
 
+const videoError = (message) => {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.expose = true;
+  return error;
+};
+
 const waitForActiveFile = async (file) => {
   if (!file?.name || file.state === "ACTIVE") return file;
   for (let attempt = 0; attempt < 45; attempt += 1) {
@@ -209,17 +216,24 @@ const waitForActiveFile = async (file) => {
     const latest = await ai.files.get({ name: file.name });
     if (latest.state === "ACTIVE") return latest;
     if (latest.state === "FAILED") {
-      throw new Error("The walkthrough video could not be processed.");
+      throw videoError(
+        "The walkthrough video could not be processed. Please try a shorter MP4 or MOV video.",
+      );
     }
   }
-  throw new Error("The walkthrough video took too long to process.");
+  throw videoError(
+    "The walkthrough video took too long to process. Please try a shorter video.",
+  );
 };
 
 const uploadVideo = async (video) => {
   const blob = new Blob([video.buffer], { type: video.mimetype });
-  const uploaded = await ai.files.uploadFile(blob, {
-    mimeType: video.mimetype,
-    displayName: "vastu-house-walkthrough",
+  const uploaded = await ai.files.upload({
+    file: blob,
+    config: {
+      mimeType: video.mimetype,
+      displayName: "vastu-house-walkthrough",
+    },
   });
   return waitForActiveFile(uploaded);
 };
@@ -301,12 +315,29 @@ const analyzeVastu = async ({
       message: error.message,
       status: error.status,
     });
-    const wrapped = new Error(
-      error.name === "AbortError"
-        ? "The Vastu analysis took too long. Please try again with a shorter video."
-        : "We couldn't analyse this home right now. Please try again in a moment.",
-    );
-    wrapped.statusCode = error.name === "AbortError" ? 504 : 503;
+    const status = Number(error.status);
+    let message =
+      "We couldn't analyse this home right now. Please try again in a moment.";
+    let statusCode = 503;
+
+    if (error.name === "AbortError" || error.code === "ABORT_ERR") {
+      message =
+        "The Vastu analysis took too long. Please try again with a shorter video.";
+      statusCode = 504;
+    } else if (status === 429) {
+      message =
+        "Vastu analysis is busy right now. Please try again in a minute.";
+    } else if (status === 401 || status === 403 || status === 404) {
+      message =
+        "Vastu analysis is not configured correctly on the server. Please try again later.";
+    } else if (status === 400) {
+      message =
+        "The map or video could not be read. Please try a clear floor plan and a short MP4 or MOV video.";
+      statusCode = 400;
+    }
+
+    const wrapped = new Error(message);
+    wrapped.statusCode = statusCode;
     wrapped.expose = true;
     throw wrapped;
   } finally {
