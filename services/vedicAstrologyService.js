@@ -466,7 +466,7 @@ const calculateVedicChart = (birthData = {}) => {
 // never the full vedicAnalysis block: the full one is far too large for a
 // prompt, and passing it raw would crowd out the retrieved knowledge the
 // answer is supposed to be grounded in.
-const buildChartContextForQA = ({ chartA, chartB, gunaMilan, dashaA, dashaB, analysisA, analysisB } = {}) => {
+const buildChartContextForQA = ({ chartA, chartB, gunaMilan, dashaA, dashaB, analysisA, analysisB, myChart, categoryContext } = {}) => {
   const context = {};
   if (chartA) context.personA = chartA;
   if (chartB) context.personB = chartB;
@@ -475,6 +475,8 @@ const buildChartContextForQA = ({ chartA, chartB, gunaMilan, dashaA, dashaB, ana
   if (dashaB) context.dashaB = dashaB;
   if (analysisA) context.analysisA = analysisA;
   if (analysisB) context.analysisB = analysisB;
+  if (myChart) context.myChart = myChart;
+  if (categoryContext) context.categoryContext = categoryContext;
   return Object.keys(context).length ? context : null;
 };
 
@@ -484,5 +486,6 @@ module.exports = {
   getRashi, degreeInSign, signIndexOf, getNavamshaSign, getNakshatra,
   getPlanetSiderealLongitudes, calculateAscendant, getHouseOfPlanet,
   calculateVedicChart, buildChartContextForQA,
+  getTrueNodeLongitude, getMeanNodeLongitude, getTropicalLongitude,
   getIsRetrograde, getRetrogradeMap, RETROGRADE_STEP_DAYS,
 };
