@@ -6,6 +6,13 @@ const Review = require("../models/review");
 const ConsultationQueue = require("../models/consultationQueue");
 const WalletTransaction = require("../models/walletTransaction");
 const Message = require("../models/message");
+const Horoscope = require("../models/horoscope");
+const HumanDesignChart = require("../models/humanDesignChart");
+const AstrologerReading = require("../models/astrologerReading");
+const {
+  calculateHumanDesignChart,
+  summarizeHumanDesignChart,
+} = require("../services/humanDesignService");
 const { getIo, isUserInCall } = require("../services/socketHub");
 const {
   FREE_MINUTES_DEFAULT,
@@ -120,6 +127,61 @@ const getAstrologerDetail = async (req, res, next) => {
       .limit(5)
       .lean();
 
+    let myChartSummary = null;
+    let activeConsultationMatchId = null;
+    let recentSharedReadings = [];
+
+    if (req.user?._id) {
+      const isViewingOther = String(req.user._id) !== String(user._id);
+      try {
+        const [savedHd, horoscope, activeMatch, sharedReadings] = await Promise.all([
+          HumanDesignChart.findOne({ user: req.user._id }).lean(),
+          Horoscope.findOne({ user: req.user._id }).lean(),
+          isViewingOther
+            ? Match.findOne({
+                matchType: "consultation",
+                status: { $in: ["accepted", "active"] },
+                $or: [
+                  { userA: req.user._id, userB: user._id },
+                  { userA: user._id, userB: req.user._id },
+                ],
+              })
+                .select("_id status")
+                .sort({ updatedAt: -1 })
+                .lean()
+            : Promise.resolve(null),
+          isViewingOther
+            ? AstrologerReading.find({
+                user: req.user._id,
+                astrologer: user._id,
+                sharedWithAstrologer: true,
+              })
+                .sort({ createdAt: -1 })
+                .limit(5)
+                .lean()
+            : Promise.resolve([]),
+        ]);
+
+        let hdDoc = savedHd;
+        if ((!hdDoc || !hdDoc.about || !hdDoc.love) && horoscope?.dateOfBirth) {
+          hdDoc = calculateHumanDesignChart({
+            name: horoscope.name || req.user.name || "User",
+            dateOfBirth: horoscope.dateOfBirth,
+            timeOfBirth: horoscope.timeOfBirth || "12:00",
+            place: horoscope.placeOfBirth || "",
+            latitude: horoscope.latitude,
+            longitude: horoscope.longitude,
+            timeZoneOffsetMinutes: horoscope.timeZoneOffsetMinutes ?? 330,
+          });
+        }
+        myChartSummary = summarizeHumanDesignChart(hdDoc);
+        activeConsultationMatchId = activeMatch?._id || null;
+        recentSharedReadings = Array.isArray(sharedReadings) ? sharedReadings : [];
+      } catch (contextErr) {
+        // Non-fatal: still return core astrologer detail
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -129,6 +191,14 @@ const getAstrologerDetail = async (req, res, next) => {
           hasFreeTrial: freeRemainingSec > 0,
           email: undefined,
         }),
+        supportedFeatures: {
+          kundliMilan: true,
+          kundliAi: true,
+          myChart: true,
+        },
+        myChartSummary,
+        activeConsultationMatchId,
+        recentSharedReadings,
         recentReviews,
       },
     });
@@ -202,15 +272,56 @@ const getAstrologerChats = async (req, res, next) => {
       Match.countDocuments(filter),
     ]);
     const matchIds = matches.map((m) => m._id);
-    const lastMessages = await Message.aggregate([
-      { $match: { match: { $in: matchIds } } },
-      { $sort: { createdAt: -1 } },
-      { $group: { _id: "$match", lastMessage: { $first: "$$ROOT" }, unreadCount: { $sum: { $cond: [{ $and: [{ $eq: ["$recipient", req.user._id] }, { $eq: ["$readAt", null] }] }, 1, 0] } } } },
+    const clientIds = matches.map((m) => {
+      const idA = m.userA?._id || m.userA;
+      const idB = m.userB?._id || m.userB;
+      return String(idA) === String(req.user._id) ? idB : idA;
+    });
+    const [lastMessages, readingCounts] = await Promise.all([
+      Message.aggregate([
+        { $match: { match: { $in: matchIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: "$match", lastMessage: { $first: "$$ROOT" }, unreadCount: { $sum: { $cond: [{ $and: [{ $eq: ["$recipient", req.user._id] }, { $eq: ["$readAt", null] }] }, 1, 0] } } } },
+      ]),
+      clientIds.length > 0
+        ? AstrologerReading.aggregate([
+            {
+              $match: {
+                astrologer: req.user._id,
+                sharedWithAstrologer: true,
+                user: { $in: clientIds },
+              },
+            },
+            {
+              $group: {
+                _id: "$user",
+                count: { $sum: 1 },
+                kinds: { $addToSet: "$kind" },
+                latestAt: { $max: "$createdAt" },
+              },
+            },
+          ])
+        : Promise.resolve([]),
     ]);
     const lastMap = new Map(lastMessages.map((l) => [String(l._id), l]));
+    const readingMap = new Map(readingCounts.map((r) => [String(r._id), r]));
     res.json({
       success: true,
-      data: matches.map((m) => ({ ...m, lastMessage: lastMap.get(String(m._id))?.lastMessage || null, unreadCount: lastMap.get(String(m._id))?.unreadCount || 0 })),
+      data: matches.map((m) => {
+        const idA = m.userA?._id || m.userA;
+        const idB = m.userB?._id || m.userB;
+        const clientId = String(idA) === String(req.user._id) ? String(idB) : String(idA);
+        const readingMeta = readingMap.get(clientId);
+        return {
+          ...m,
+          lastMessage: lastMap.get(String(m._id))?.lastMessage || null,
+          unreadCount: lastMap.get(String(m._id))?.unreadCount || 0,
+          sharedReadingsCount: readingMeta?.count || 0,
+          hasSharedReadings: Boolean(readingMeta?.count),
+          sharedReadingKinds: readingMeta?.kinds || [],
+          lastSharedReadingAt: readingMeta?.latestAt || null,
+        };
+      }),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
     });
   } catch (error) { next(error); }

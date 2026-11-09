@@ -9,6 +9,10 @@ const {
   getEarnings,
 } = require("../controllers/astrologerController");
 const { kundliMatch } = require("../controllers/kundliMatchController");
+const {
+  listIncomingAstrologerReadings,
+  getConsultationClientCharts,
+} = require("../controllers/astrologerFeatureController");
 
 const router = express.Router();
 
@@ -22,5 +26,7 @@ router.patch("/profile", updateOwnProfile);
 router.get("/chats", getAstrologerChats);
 router.get("/queue", getAstrologerQueue);
 router.get("/earnings", getEarnings);
+router.get("/readings", listIncomingAstrologerReadings);
+router.get("/consultations/:matchId/client-charts", getConsultationClientCharts);
 
 module.exports = router;

@@ -9,11 +9,16 @@
 
 const mongoose = require("mongoose");
 const Horoscope = require("../models/horoscope");
+const HumanDesignChart = require("../models/humanDesignChart");
 const {
   calculateFullKundli,
   calculateLalKitabVarshaPhal: buildLalKitabVarshaPhal,
   parseNormalizedTime,
 } = require("../services/kundliCalculationService");
+const {
+  calculateHumanDesignChart,
+  summarizeHumanDesignChart,
+} = require("../services/humanDesignService");
 const { resolveBirthLocationFromPlace } = require("../services/birthLocationService");
 const { askAstroQuestion } = require("../services/rag/ragService");
 const { buildChartContextForQA } = require("../services/vedicAstrologyService");
@@ -522,10 +527,53 @@ const chatKundli = async (req, res, next) => {
     let sources = [];
     let isGrounded = false;
 
+    let myChartSummary = null;
+    try {
+      if (parsedBirthDetails && (parsedBirthDetails.dateOfBirth || parsedBirthDetails.birthDate)) {
+        const parsedDobForHd = parseDateOfBirth(parsedBirthDetails.dateOfBirth || parsedBirthDetails.birthDate);
+        if (parsedDobForHd) {
+          myChartSummary = summarizeHumanDesignChart(
+            calculateHumanDesignChart({
+              name: parsedBirthDetails.name || req.user?.name || "User",
+              dateOfBirth: parsedDobForHd,
+              timeOfBirth: parsedBirthDetails.timeOfBirth || parsedBirthDetails.birthTime || "12:00",
+              place: parsedBirthDetails.place || parsedBirthDetails.placeOfBirth || "",
+              latitude: parsedBirthDetails.latitude,
+              longitude: parsedBirthDetails.longitude,
+              timeZoneOffsetMinutes: parsedBirthDetails.timeZoneOffsetMinutes ?? 330,
+            })
+          );
+        }
+      } else if (req.user?._id) {
+        const savedHd = await HumanDesignChart.findOne({ user: req.user._id }).lean();
+        if (savedHd) {
+          myChartSummary = summarizeHumanDesignChart(savedHd);
+        } else {
+          const savedHoroscope = await Horoscope.findOne({ user: req.user._id }).lean();
+          if (savedHoroscope?.dateOfBirth) {
+            myChartSummary = summarizeHumanDesignChart(
+              calculateHumanDesignChart({
+                name: savedHoroscope.name || req.user.name || "User",
+                dateOfBirth: savedHoroscope.dateOfBirth,
+                timeOfBirth: savedHoroscope.timeOfBirth,
+                place: savedHoroscope.placeOfBirth,
+                latitude: savedHoroscope.latitude,
+                longitude: savedHoroscope.longitude,
+                timeZoneOffsetMinutes: savedHoroscope.timeZoneOffsetMinutes,
+              })
+            );
+          }
+        }
+      }
+    } catch (hdErr) {
+      // Non-fatal: continue Vedic Q&A even if MyChart context could not be hydrated
+    }
+
     // Attempt retrieval-augmented generation (RAG) with AI service
     try {
       const chartContext = buildChartContextForQA({
         chartA: calculatedData.rawChart,
+        myChart: myChartSummary,
         categoryContext: {
           category: categoryKey,
           data: specificCategoryData,
@@ -587,7 +635,15 @@ const chatKundli = async (req, res, next) => {
           rashi: chartSummary.rashi,
           nakshatra: chartSummary.nakshatra,
           mangalDosh: chartSummary.mangalDosh,
+          ...(myChartSummary
+            ? {
+                humanDesignType: myChartSummary.typeLabel,
+                humanDesignProfile: myChartSummary.profileLabel,
+                humanDesignAuthority: myChartSummary.authority,
+              }
+            : {}),
         },
+        ...(myChartSummary ? { myChart: myChartSummary } : {}),
         sources,
       },
     });
@@ -596,120 +652,200 @@ const chatKundli = async (req, res, next) => {
   }
 };
 
+const VALID_MY_CHART_TABS = new Set(["bodyGraph", "about", "centers", "gates", "channels", "love"]);
 
-  async function myChart(req, res, next) {
-    try {
-      // If user is authenticated, try to find their Human Design chart
-      if (req.user && req.user._id) {
-        const chart = await HumanDesignChart.findOne({ user: req.user._id });
-        if (chart) {
-          return res.status(200).json({
-            success: true,
-            data: chart,
-          });
+const normalizeMyChartTab = (rawTab) => {
+  if (!rawTab || typeof rawTab !== "string") return null;
+  const cleaned = rawTab.trim().toLowerCase();
+  const map = {
+    bodygraph: "bodyGraph",
+    body_graph: "bodyGraph",
+    about: "about",
+    centers: "centers",
+    gates: "gates",
+    channels: "channels",
+    love: "love",
+  };
+  return map[cleaned] || (VALID_MY_CHART_TABS.has(rawTab.trim()) ? rawTab.trim() : null);
+};
+
+// Shared helper used by both /api/kundli/my-chart and /api/astrologers/* flows
+// to compute, enrich, and optionally persist the user's Human Design "My Chart".
+const resolveOrComputeMyChart = async (reqUser, rawInput = {}, options = {}) => {
+  const { persist = true, forceRecalculate = false } = options;
+  const input = rawInput && typeof rawInput === "object" ? rawInput : {};
+  const rawDob = input.birthDate || input.dateOfBirth;
+
+  if (rawDob !== undefined && rawDob !== null && String(rawDob).trim() !== "") {
+    const parsedDob = parseDateOfBirth(rawDob);
+    if (!parsedDob) {
+      const err = new Error(
+        "dateOfBirth must be a valid date (e.g. YYYY-MM-DD, DD/MM/YYYY, or 23-OCT-2026)"
+      );
+      err.statusCode = 400;
+      err.expose = true;
+      throw err;
+    }
+
+    const rawTob = input.birthTime || input.timeOfBirth || "12:00";
+    const parsedTime = parseNormalizedTime(rawTob);
+    const hasExplicitLat = input.latitude !== undefined && input.latitude !== "" && Number.isFinite(Number(input.latitude));
+    const hasExplicitLon = input.longitude !== undefined && input.longitude !== "" && Number.isFinite(Number(input.longitude));
+    const hasExplicitTz = input.timeZoneOffsetMinutes !== undefined && input.timeZoneOffsetMinutes !== "" && Number.isFinite(Number(input.timeZoneOffsetMinutes));
+
+    let lat = hasExplicitLat ? Number(input.latitude) : NaN;
+    let lon = hasExplicitLon ? Number(input.longitude) : NaN;
+    let tzMinutes = hasExplicitTz ? Number(input.timeZoneOffsetMinutes) : 330;
+    let placeName = String(input.birthPlace || input.placeOfBirth || input.place || "").trim();
+
+    if ((!Number.isFinite(lat) || !Number.isFinite(lon)) && placeName) {
+      try {
+        const resolved = await resolveBirthLocationFromPlace(placeName, parsedDob);
+        if (resolved) {
+          lat = resolved.latitude;
+          lon = resolved.longitude;
+          if (!hasExplicitTz) tzMinutes = resolved.timeZoneOffsetMinutes;
+          placeName = resolved.placeOfBirth || placeName;
         }
+      } catch (geoErr) {
+        // Non-fatal if timeZoneOffsetMinutes is already known
       }
+    }
 
-      // If no saved chart, generate one based on birth details from query/body
-      const {
-        name,
-        dateOfBirth,
-        timeOfBirth,
-        place,
-        gender,
-        latitude,
-        longitude,
-        timeZoneOffsetMinutes,
-      } = req.body || req.query;
+    const chartData = calculateHumanDesignChart({
+      name: String(input.name || reqUser?.name || "User").trim(),
+      dateOfBirth: parsedDob,
+      timeOfBirth: parsedTime.formatted24.slice(0, 5),
+      place: placeName,
+      latitude: Number.isFinite(lat) ? lat : null,
+      longitude: Number.isFinite(lon) ? lon : null,
+      timeZoneOffsetMinutes: tzMinutes,
+    });
 
-      // If we have birth data, generate a chart
-      if (dateOfBirth) {
-        const parsedDob = parseDateOfBirth(dateOfBirth);
-        const rawTob = timeOfBirth || "12:00:00";
-        const parsedTime = parseNormalizedTime(rawTob);
-        let lat = Number(latitude);
-        let lon = Number(longitude);
-        let tzMinutes = Number.isFinite(Number(timeZoneOffsetMinutes)) ? Number(timeZoneOffsetMinutes) : 330;
-        let placeName = String(place || "").trim();
-
-        // Generate chart
-        const chartData = await calculateFullKundli({
-          name: name || "User",
-          dateOfBirth: parsedDob ? parsedDob.toISOString().split("T")[0] : undefined,
-          timeOfBirth: parsedTime.original,
-          place: placeName || "Unknown Place",
-          gender: gender || "Unknown",
-          latitude: lat,
-          longitude: lon,
-          timeZoneOffsetMinutes: tzMinutes,
-        });
-
-        // Save to database if user is authenticated
-        if (req.user && req.user._id) {
-          const existing = await HumanDesignChart.findOne({ user: req.user._id });
-          if (!existing) {
-            const newChart = new HumanDesignChart({
-              user: req.user._id,
+    const shouldSave = input.save === undefined ? persist : Boolean(input.save && input.save !== "false");
+    if (shouldSave && reqUser?._id) {
+      try {
+        const savedDoc = await HumanDesignChart.findOneAndUpdate(
+          { user: reqUser._id },
+          {
+            $set: {
+              user: reqUser._id,
               ...chartData,
-            });
-            await newChart.save();
-          }
-        }
-
-        return res.status(200).json({
-          success: true,
-          data: chartData,
-        });
+            },
+          },
+          { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+        ).lean();
+        return savedDoc || chartData;
+      } catch (saveErr) {
+        // Non-fatal if persistence fails (e.g. unit test without DB connection)
       }
+    }
 
-      // No birth data provided - return sample/template structure
-      return res.status(200).json({
-        success: true,
-        data: {
-          type: "manifestingGenerator",
-          profile: "1/3",
-          authority: "Sacral",
-          strategy: "To respond then inform",
-          notSelfTheme: "Frustration",
-          centers: [
-            { name: "Crown", defined: false, keywords: ["inspiration", "mental pressure", "confusion"] },
-            { name: "Ajna", defined: false, keywords: ["thoughts", "ideas", "insights"] },
-            { name: "Throat", defined: true, keywords: ["communication", "expression", "conversations"] },
-            { name: "G", defined: true, keywords: ["direction", "love"] },
-            { name: "Heart/Ego", defined: false, keywords: ["willpower", "vitality", "resistance"] },
-            { name: "Sacral", defined: true, keywords: ["life force", "endurance", "work capacity"] },
-            { name: "Solar Plexus", defined: false, keywords: ["emotions", "feelings", "intuition"] },
-            { name: "Spleen", defined: false, keywords: ["health", "immunity", "survival"] },
-            { name: "Root", defined: true, keywords: ["adrenaline", "stress", "drive"] },
-          ],
-          gates: [
-            { number: 1, name: "The Gate of the Explorer" },
-            { number: 2, name: "The Gate of Receptivity" },
-            { number: 3, name: "The Gate of Resistance" },
-            { number: 4, name: "The Gate of Purpose" },
-            { number: 5, name: "The Gate of Fixed Abilities" },
-            { number: 6, name: "The Gate of Conflict" },
-          ],
-          channels: [
-            { id: "20-34", name: "Channel of Keeping Busy", isLoveSection: true },
-            { id: "28-38", name: "Channel of Struggle", isLoveSection: true },
-            { id: "47-64", name: "Channel of Abstract Thinking", isLoveSection: true },
-          ],
-          personality: [
-            { planet: "Sun", gate: 59, line: 3 },
-            { planet: "Earth", gate: 26, line: 2 },
-            { planet: "Moon", gate: 59, line: 2 },
-          ],
-          design: [
-            { planet: "Sun", gate: 6, line: 2 },
-            { planet: "Earth", gate: 47, line: 2 },
-          ],
-        },
+    return chartData;
+  }
+
+  // No explicit birth details supplied -> check cached HumanDesignChart or user's Horoscope
+  if (reqUser?._id) {
+    if (!forceRecalculate) {
+      const existing = await HumanDesignChart.findOne({ user: reqUser._id }).lean();
+      if (
+        existing &&
+        Array.isArray(existing.personality) &&
+        existing.personality.length === 13 &&
+        existing.about &&
+        existing.love &&
+        existing.bodyGraph
+      ) {
+        return existing;
+      }
+      // Legacy/partial saved doc with birthDetails -> rehydrate accurately
+      if (existing?.birthDetails?.dateOfBirth) {
+        const recomputed = calculateHumanDesignChart({
+          name: existing.name || reqUser.name || "User",
+          ...existing.birthDetails,
+        });
+        await HumanDesignChart.findOneAndUpdate(
+          { user: reqUser._id },
+          { $set: recomputed },
+          { upsert: true, new: true }
+        ).lean().catch(() => null);
+        return recomputed;
+      }
+    }
+
+    const horoscope = await Horoscope.findOne({ user: reqUser._id }).lean();
+    if (horoscope?.dateOfBirth) {
+      const computed = calculateHumanDesignChart({
+        name: horoscope.name || reqUser.name || "User",
+        dateOfBirth: horoscope.dateOfBirth,
+        timeOfBirth: horoscope.timeOfBirth || "12:00",
+        place: horoscope.placeOfBirth || "",
+        latitude: horoscope.latitude,
+        longitude: horoscope.longitude,
+        timeZoneOffsetMinutes: horoscope.timeZoneOffsetMinutes ?? 330,
       });
-    } catch (error) {
-      next(error);
+      if (persist) {
+        const savedDoc = await HumanDesignChart.findOneAndUpdate(
+          { user: reqUser._id },
+          { $set: { user: reqUser._id, ...computed } },
+          { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+        ).lean().catch(() => null);
+        if (savedDoc) return savedDoc;
+      }
+      return computed;
     }
   }
+
+  const err = new Error(
+    "Birth details (dateOfBirth) or a saved Horoscope are required to calculate My Chart."
+  );
+  err.statusCode = 400;
+  err.expose = true;
+  throw err;
+};
+
+/**
+ * GET / POST /api/kundli/my-chart
+ * Calculates or retrieves the Human Design BodyGraph ("My Chart") with all 5 tabs:
+ * BodyGraph (13 Design + 13 Personality planets), About, Centers (9), Gates (active),
+ * Channels (defined) + Love ("Love for Type").
+ */
+const myChart = async (req, res, next) => {
+  try {
+    const bodyInput = req.body && typeof req.body === "object" ? req.body : {};
+    const queryInput = req.query && typeof req.query === "object" ? req.query : {};
+    const mergedInput = { ...queryInput, ...bodyInput };
+    const recalculate =
+      mergedInput.recalculate === true || mergedInput.recalculate === "true";
+
+    const chart = await resolveOrComputeMyChart(req.user, mergedInput, {
+      persist: true,
+      forceRecalculate: recalculate,
+    });
+
+    const requestedTab = normalizeMyChartTab(mergedInput.tab);
+    const data = requestedTab
+      ? {
+          activeTab: requestedTab,
+          section: chart[requestedTab],
+          summary: summarizeHumanDesignChart(chart),
+          ...chart,
+        }
+      : {
+          summary: summarizeHumanDesignChart(chart),
+          ...chart,
+        };
+
+    return res.status(200).json({
+      success: true,
+      message: "My Chart retrieved successfully",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   calculateKundli,
   calculateLalKitabVarshaPhal,
@@ -717,4 +853,6 @@ module.exports = {
   getCategories,
   chatKundli,
   myChart,
+  resolveOrComputeMyChart,
+  parseDateOfBirth,
 };

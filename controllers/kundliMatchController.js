@@ -10,12 +10,19 @@
 // client can re-score the match with exactly the same rules and describe each
 // factor in the astrologer's own language.
 
+const mongoose = require("mongoose");
+const Horoscope = require("../models/horoscope");
+const SavedKundli = require("../models/savedKundli");
 const {
   calculateVedicChart,
   getNakshatra,
 } = require("../services/vedicAstrologyService");
 const { calculateGunaMilan, VARNA, GANA, NADI } = require("../services/gunaMilanService");
 const { resolveBirthLocationFromPlace } = require("../services/birthLocationService");
+const {
+  calculateHumanDesignChart,
+  summarizeHumanDesignChart,
+} = require("../services/humanDesignService");
 
 const MANGAL_HOUSES = [1, 2, 4, 7, 8, 12];
 
@@ -156,77 +163,198 @@ const describePerson = (person, chart) => {
   };
 };
 
+// Resolves partner override from either SavedKundli id or user's own Horoscope
+const hydratePartnerInput = async (explicitInput, { savedKundliId, useMyHoroscopeRole, role, reqUser } = {}) => {
+  if (explicitInput && (explicitInput.dateOfBirth || explicitInput.birthDate)) {
+    return {
+      input: {
+        ...explicitInput,
+        dateOfBirth: explicitInput.dateOfBirth || explicitInput.birthDate,
+        timeOfBirth: explicitInput.timeOfBirth || explicitInput.birthTime,
+        place: explicitInput.place || explicitInput.placeOfBirth || explicitInput.birthPlace,
+      },
+    };
+  }
+
+  if (savedKundliId && reqUser?._id) {
+    let savedDoc = null;
+    if (savedKundliId === "profile") {
+      savedDoc = await Horoscope.findOne({ user: reqUser._id }).lean();
+      if (savedDoc) savedDoc = { ...savedDoc, place: savedDoc.placeOfBirth || "" };
+    } else {
+      if (!mongoose.isValidObjectId(savedKundliId)) {
+        return { error: `Invalid ${role}SavedKundliId` };
+      }
+      savedDoc = await SavedKundli.findOne({ _id: savedKundliId, user: reqUser._id }).lean();
+    }
+    if (!savedDoc) {
+      return { error: `Saved Kundli not found for ${role}` };
+    }
+    return {
+      input: {
+        name: savedDoc.name || reqUser.name || role,
+        dateOfBirth: savedDoc.dateOfBirth,
+        timeOfBirth: savedDoc.timeOfBirth,
+        place: savedDoc.place,
+        latitude: savedDoc.latitude,
+        longitude: savedDoc.longitude,
+        timeZoneOffsetMinutes: savedDoc.timeZoneOffsetMinutes,
+      },
+    };
+  }
+
+  if (useMyHoroscopeRole === role && reqUser?._id) {
+    const horoscope = await Horoscope.findOne({ user: reqUser._id }).lean();
+    if (!horoscope) {
+      return { error: `Horoscope not found on file to auto-fill ${role} details` };
+    }
+    return {
+      input: {
+        name: horoscope.name || reqUser.name || role,
+        dateOfBirth: horoscope.dateOfBirth,
+        timeOfBirth: horoscope.timeOfBirth,
+        place: horoscope.placeOfBirth,
+        latitude: horoscope.latitude,
+        longitude: horoscope.longitude,
+        timeZoneOffsetMinutes: horoscope.timeZoneOffsetMinutes,
+      },
+    };
+  }
+
+  return { input: explicitInput };
+};
+
+// Core reusable Kundli Milan computation returning status/payload object.
+const computeKundliMatchData = async (reqBody = {}, reqUser = null, options = {}) => {
+  const {
+    boy,
+    girl,
+    useMyHoroscope,
+    boySavedKundliId,
+    girlSavedKundliId,
+    includeMyChart,
+  } = reqBody;
+
+  const [boyHydrated, girlHydrated] = await Promise.all([
+    hydratePartnerInput(boy, {
+      savedKundliId: boySavedKundliId,
+      useMyHoroscopeRole: useMyHoroscope,
+      role: "boy",
+      reqUser,
+    }),
+    hydratePartnerInput(girl, {
+      savedKundliId: girlSavedKundliId,
+      useMyHoroscopeRole: useMyHoroscope,
+      role: "girl",
+      reqUser,
+    }),
+  ]);
+
+  if (boyHydrated.error) {
+    return { statusCode: 400, success: false, message: boyHydrated.error };
+  }
+  if (girlHydrated.error) {
+    return { statusCode: 400, success: false, message: girlHydrated.error };
+  }
+
+  const [boyResult, girlResult] = await Promise.all([
+    resolvePerson(boyHydrated.input),
+    resolvePerson(girlHydrated.input),
+  ]);
+  if (boyResult.error) {
+    return { statusCode: 400, success: false, message: boyResult.error };
+  }
+  if (girlResult.error) {
+    return { statusCode: 400, success: false, message: girlResult.error };
+  }
+
+  const boyChart = calculateVedicChart({
+    dateOfBirth: boyResult.person.dateOfBirth,
+    timeOfBirth: boyResult.person.timeOfBirth,
+    timeZoneOffsetMinutes: boyResult.person.timeZoneOffsetMinutes,
+    latitude: boyResult.person.latitude,
+    longitude: boyResult.person.longitude,
+  });
+  const girlChart = calculateVedicChart({
+    dateOfBirth: girlResult.person.dateOfBirth,
+    timeOfBirth: girlResult.person.timeOfBirth,
+    timeZoneOffsetMinutes: girlResult.person.timeZoneOffsetMinutes,
+    latitude: girlResult.person.latitude,
+    longitude: girlResult.person.longitude,
+  });
+
+  const boyMoon = Number(boyChart.planets?.Moon?.longitude);
+  const girlMoon = Number(girlChart.planets?.Moon?.longitude);
+  if (!Number.isFinite(boyMoon) || !Number.isFinite(girlMoon)) {
+    return {
+      statusCode: 422,
+      success: false,
+      message: "The charts could not be calculated for these birth details.",
+    };
+  }
+
+  const gunaMilan = calculateGunaMilan(boyMoon, girlMoon);
+
+  const reportData = {
+    source: "server",
+    generatedAt: new Date().toISOString(),
+    boy: describePerson(boyResult.person, boyChart),
+    girl: describePerson(girlResult.person, girlChart),
+    gunaMilan: {
+      factors: Object.entries(gunaMilan.factors).map(([key, value]) => ({
+        key,
+        points: value.points,
+        max: value.max,
+      })),
+      doshas: gunaMilan.doshas.map((dosha) => ({
+        name: dosha.name,
+        severity: dosha.severity,
+        note: dosha.note,
+      })),
+      totalPoints: gunaMilan.totalPoints,
+      maxPoints: gunaMilan.maxPoints,
+      percentage: gunaMilan.percentage,
+      verdict: gunaMilan.verdict,
+    },
+  };
+
+  if (options.includePartnersMyChart || includeMyChart) {
+    const boyHd = calculateHumanDesignChart({
+      ...boyResult.person,
+      timeOfBirth: boyResult.person.timeOfBirth || "12:00",
+    });
+    const girlHd = calculateHumanDesignChart({
+      ...girlResult.person,
+      timeOfBirth: girlResult.person.timeOfBirth || "12:00",
+    });
+    reportData.partnersMyChart = {
+      boy: summarizeHumanDesignChart(boyHd),
+      girl: summarizeHumanDesignChart(girlHd),
+    };
+  }
+
+  return { statusCode: 200, success: true, data: reportData };
+};
+
 // POST /api/kundli/match (also mounted at /api/astrologer/kundli-match)
 const kundliMatch = async (req, res, next) => {
   try {
-    const { boy, girl } = req.body || {};
-
-    const [boyResult, girlResult] = await Promise.all([
-      resolvePerson(boy),
-      resolvePerson(girl),
-    ]);
-    if (boyResult.error) {
-      return res.status(400).json({ success: false, message: boyResult.error });
-    }
-    if (girlResult.error) {
-      return res.status(400).json({ success: false, message: girlResult.error });
-    }
-
-    const boyChart = calculateVedicChart({
-      dateOfBirth: boyResult.person.dateOfBirth,
-      timeOfBirth: boyResult.person.timeOfBirth,
-      timeZoneOffsetMinutes: boyResult.person.timeZoneOffsetMinutes,
-      latitude: boyResult.person.latitude,
-      longitude: boyResult.person.longitude,
-    });
-    const girlChart = calculateVedicChart({
-      dateOfBirth: girlResult.person.dateOfBirth,
-      timeOfBirth: girlResult.person.timeOfBirth,
-      timeZoneOffsetMinutes: girlResult.person.timeZoneOffsetMinutes,
-      latitude: girlResult.person.latitude,
-      longitude: girlResult.person.longitude,
-    });
-
-    const boyMoon = Number(boyChart.planets?.Moon?.longitude);
-    const girlMoon = Number(girlChart.planets?.Moon?.longitude);
-    if (!Number.isFinite(boyMoon) || !Number.isFinite(girlMoon)) {
-      return res.status(422).json({
+    const result = await computeKundliMatchData(req.body || {}, req.user || null);
+    if (!result.success) {
+      return res.status(result.statusCode).json({
         success: false,
-        message: "The charts could not be calculated for these birth details.",
+        message: result.message,
       });
     }
 
-    const gunaMilan = calculateGunaMilan(boyMoon, girlMoon);
-
-    res.json({
+    return res.json({
       success: true,
       message: "Kundli Milan calculated",
-      data: {
-        source: "server",
-        generatedAt: new Date().toISOString(),
-        boy: describePerson(boyResult.person, boyChart),
-        girl: describePerson(girlResult.person, girlChart),
-        gunaMilan: {
-          factors: Object.entries(gunaMilan.factors).map(([key, value]) => ({
-            key,
-            points: value.points,
-            max: value.max,
-          })),
-          doshas: gunaMilan.doshas.map((dosha) => ({
-            name: dosha.name,
-            severity: dosha.severity,
-            note: dosha.note,
-          })),
-          totalPoints: gunaMilan.totalPoints,
-          maxPoints: gunaMilan.maxPoints,
-          percentage: gunaMilan.percentage,
-          verdict: gunaMilan.verdict,
-        },
-      },
+      data: result.data,
     });
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { kundliMatch };
+module.exports = { kundliMatch, computeKundliMatchData };
