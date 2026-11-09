@@ -190,10 +190,14 @@ const normalizeReport = (parsed, rawText) => {
   };
 };
 
-const buildPrompt = ({ notes, homeType, facing }) => {
+const buildPrompt = ({ notes, homeType, facing, videoNote }) => {
   const lines = [
-    "Analyse the attached house floor map image and walkthrough video for Vastu.",
-    "If the two uploads cover different things, combine what both show.",
+    videoNote
+      ? "Analyse the attached house floor map image for Vastu."
+      : "Analyse the attached house floor map image and walkthrough video for Vastu.",
+    videoNote
+      ? videoNote
+      : "If the two uploads cover different things, combine what both show.",
   ];
   if (homeType) lines.push(`Home type: ${homeType}`);
   if (facing) lines.push(`Known facing / entrance direction: ${facing}`);
