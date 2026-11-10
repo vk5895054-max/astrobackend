@@ -242,7 +242,6 @@ const updateAvailability = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// PATCH /api/astrologer/profile — astrologer edits own profile
 const updateOwnProfile = async (req, res, next) => {
   try {
     const allowed = ["displayName", "photo", "bio", "expertise", "languages", "experienceYears", "rateChatPerMin", "rateCallPerMin"];
@@ -256,7 +255,6 @@ const updateOwnProfile = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// GET /api/astrologer/chats — astrologer's consultation list with last message
 const getAstrologerChats = async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -327,7 +325,6 @@ const getAstrologerChats = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// GET /api/astrologer/queue
 const getAstrologerQueue = async (req, res, next) => {
   try {
     const items = await ConsultationQueue.find({ astrologer: req.user._id, status: "waiting" })
