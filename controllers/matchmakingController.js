@@ -4,7 +4,10 @@ const Profile = require("../models/profile");
 const Questionnaire = require("../models/questionnaire");
 const Match = require("../models/match");
 const Horoscope = require("../models/horoscope");
+const HumanDesignChart = require("../models/humanDesignChart");
 const { calculateCompatibility } = require("../services/compatibilityService");
+const { calculateHumanDesignChart } = require("../services/humanDesignService");
+const { calculateHumanDesignCompatibility } = require("../services/humanDesignCompatibilityService");
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const isCompleteQuestionnaire = (questionnaire) => Questionnaire.fields.every((field) => typeof questionnaire?.[field] === "string" && questionnaire[field].trim());
@@ -20,6 +23,20 @@ const getCompatibilityInputs = async (userId) => Promise.all([
   Questionnaire.findOne({ user: userId }),
   Horoscope.findOne({ user: userId }),
 ]);
+
+const resolveHumanDesignChart = (savedChart, horoscope, name) => {
+  if (savedChart) return savedChart;
+  if (!horoscope?.dateOfBirth) return null;
+  return calculateHumanDesignChart({
+    name: horoscope.name || name || "User",
+    dateOfBirth: horoscope.dateOfBirth,
+    timeOfBirth: horoscope.timeOfBirth || "12:00",
+    place: horoscope.placeOfBirth || "",
+    latitude: horoscope.latitude,
+    longitude: horoscope.longitude,
+    timeZoneOffsetMinutes: horoscope.timeZoneOffsetMinutes ?? 330,
+  });
+};
 
 const orderedUsers = (first, second) => String(first) < String(second) ? [first, second] : [second, first];
 
@@ -85,6 +102,25 @@ const calculateMatch = async (req, res, next) => {
       genderA: genderById.get(String(userA)),
       genderB: genderById.get(String(userB)),
     });
+    const designCharts = await HumanDesignChart.find({
+      user: { $in: [userA, userB] },
+    }).lean();
+    const designChartByUser = new Map(
+      designCharts.map((chart) => [String(chart.user), chart]),
+    );
+    const humanDesign = calculateHumanDesignCompatibility(
+      resolveHumanDesignChart(
+        designChartByUser.get(String(userA)),
+        String(userA) === String(req.user._id) ? horoscopeA : horoscopeB,
+        String(userA) === String(req.user._id) ? req.user.name : partner.name,
+      ),
+      resolveHumanDesignChart(
+        designChartByUser.get(String(userB)),
+        String(userB) === String(req.user._id) ? horoscopeA : horoscopeB,
+        String(userB) === String(req.user._id) ? req.user.name : partner.name,
+      ),
+    );
+    if (humanDesign) report.humanDesign = humanDesign;
     const existing = await Match.findOne({ userA, userB }).select("requestedBy requestedTo status").lean();
     // Backfill the request sides when older records were created without them,
     // otherwise keep whichever side sent the request first.
@@ -177,14 +213,21 @@ const getRecommendations = async (req, res, next) => {
     const candidateIds = profiles.map((profile) => profile.user).filter((id) => String(id) !== String(req.user._id));
     const userFilter = { _id: { $in: candidateIds }, isActive: true };
     if (req.query.gender) userFilter.gender = req.query.gender;
-    const [users, questionnaires, horoscopes] = await Promise.all([
+    const [users, questionnaires, horoscopes, designCharts] = await Promise.all([
       User.find(userFilter).select("name gender").lean(),
       Questionnaire.find({ user: { $in: candidateIds } }).lean(),
       Horoscope.find({ user: { $in: candidateIds } }).lean(),
+      HumanDesignChart.find({ user: { $in: [req.user._id, ...candidateIds] } }).lean(),
     ]);
     const userById = new Map(users.map((user) => [String(user._id), user]));
     const questionnaireById = new Map(questionnaires.map((item) => [String(item.user), item]));
     const horoscopeById = new Map(horoscopes.map((item) => [String(item.user), item]));
+    const designChartByUser = new Map(designCharts.map((item) => [String(item.user), item]));
+    const myHumanDesignChart = resolveHumanDesignChart(
+      designChartByUser.get(String(req.user._id)),
+      myHoroscope,
+      req.user.name,
+    );
     const recommendations = profiles
       .filter((profile) => userById.has(String(profile.user)) && isCompleteQuestionnaire(questionnaireById.get(String(profile.user))))
       .map((profile) => {
@@ -206,7 +249,31 @@ const getRecommendations = async (req, res, next) => {
           genderA: genderById.get(String(candidateA)),
           genderB: genderById.get(String(candidateB)),
         });
-        return { user, profile, compatibility: { score: report.score, label: report.overallLabel, conclusion: report.overallConclusion, strengths: report.strengths } };
+        const candidateHumanDesignChart = resolveHumanDesignChart(
+          designChartByUser.get(String(profile.user)),
+          horoscopeById.get(String(profile.user)),
+          user.name,
+        );
+        const chartA =
+          candidateA === String(req.user._id)
+            ? myHumanDesignChart
+            : candidateHumanDesignChart;
+        const chartB =
+          candidateB === String(req.user._id)
+            ? myHumanDesignChart
+            : candidateHumanDesignChart;
+        const humanDesign = calculateHumanDesignCompatibility(chartA, chartB);
+        return {
+          user,
+          profile,
+          compatibility: {
+            score: report.score,
+            label: report.overallLabel,
+            conclusion: report.overallConclusion,
+            strengths: report.strengths,
+            ...(humanDesign ? { humanDesign } : {}),
+          },
+        };
       })
       .sort((first, second) => second.compatibility.score - first.compatibility.score);
     const total = recommendations.length;

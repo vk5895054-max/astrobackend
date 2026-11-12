@@ -72,3 +72,25 @@ test("no call site spreads the helper", () => {
     );
   }
 });
+
+test("Human Design compatibility is added to recommendations and saved match reports", () => {
+  assert.ok(
+    (code.match(/calculateHumanDesignCompatibility\s*\(/g) || []).length >= 2,
+    "both recommendation results and calculated match reports should use the bodygraph compatibility service",
+  );
+  assert.match(
+    code,
+    /if\s*\(humanDesign\)\s*report\.humanDesign\s*=\s*humanDesign/,
+    "calculated match reports should persist optional Human Design compatibility",
+  );
+  assert.match(
+    code,
+    /\.\.\.\(humanDesign\s*\?\s*\{\s*humanDesign\s*\}\s*:\s*\{\}\)/,
+    "recommendations should include the bodygraph report when both charts are available",
+  );
+  assert.match(
+    code,
+    /score:\s*report\.score/,
+    "the existing questionnaire-based score should remain independent of the optional chart section",
+  );
+});

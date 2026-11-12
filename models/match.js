@@ -83,6 +83,8 @@ const matchSchema = new mongoose.Schema({
 	// Optional: same rule as above, but the sidereal/Vedic report. Runs
 	// alongside `astrology` rather than replacing it.
 	vedic: { type: vedicSchema, required: false },
+	// Optional Human Design connection analysis from both users' bodygraphs.
+	humanDesign: { type: mongoose.Schema.Types.Mixed, required: false },
 	strengths: { type: [String], default: [] },
 	potentialChallenges: { type: [String], default: [] },
 	recommendations: { type: [String], default: [] },
