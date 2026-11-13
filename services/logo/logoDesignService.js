@@ -207,7 +207,14 @@ const paletteFor = (theme, muhuratTheme) => ({
   surface: "#FFFFFF",
 });
 
-const buildVariants = ({ theme, muhuratTheme, monogram, companyName, tagline }) => {
+const buildVariants = ({
+  theme,
+  muhuratTheme,
+  monogram,
+  companyName,
+  companyType,
+  tagline,
+}) => {
   const base = paletteFor(theme, muhuratTheme);
   const support = muhuratTheme || theme;
 
@@ -221,6 +228,7 @@ const buildVariants = ({ theme, muhuratTheme, monogram, companyName, tagline }) 
       colors: { ...base },
       monogram,
       companyName,
+      companyType,
       tagline,
       note: `${theme.ruler} colour family, built to stay sharp as an app icon.`,
     },
@@ -238,6 +246,7 @@ const buildVariants = ({ theme, muhuratTheme, monogram, companyName, tagline }) 
       },
       monogram,
       companyName,
+      companyType,
       tagline,
       note: `An emblem sealed with ${support.ruler} geometry — ideal for packaging and signage.`,
     },
@@ -256,6 +265,7 @@ const buildVariants = ({ theme, muhuratTheme, monogram, companyName, tagline }) 
       },
       monogram,
       companyName,
+      companyType,
       tagline,
       note: "A quiet wordmark that lets the company name lead and the symbol support it.",
     },
@@ -265,11 +275,19 @@ const buildVariants = ({ theme, muhuratTheme, monogram, companyName, tagline }) 
 const fallbackTagline = (theme, supportTheme) =>
   `${titleCase(theme.values[0])} · ${titleCase(supportTheme.values[1] || supportTheme.values[0])}`;
 
-const fallbackConcept = ({ companyName, fullName, location, theme, supportTheme, numbers }) => {
+const fallbackConcept = ({
+  companyName,
+  companyType,
+  fullName,
+  location,
+  theme,
+  supportTheme,
+  numbers,
+}) => {
   const owner = fullName ? `${fullName}'s` : "your";
   const place = location ? ` Rooted in ${location}, the mark stays warm rather than corporate.` : "";
   return (
-    `${companyName} is drawn as a ${theme.motif}-led mark in the ${theme.ruler.toLowerCase()} colour family, ` +
+    `${companyName} is drawn for the ${companyType} category as a ${theme.motif}-led mark in the ${theme.ruler.toLowerCase()} colour family, ` +
     `using ${owner} Mulank ${numbers.mulank.value ?? "—"} and name number ${numbers.nameNumber.value ?? "—"}. ` +
     `The ${supportTheme.ruler.toLowerCase()} accent keeps the identity distinctive without losing legibility.${place}`
   );
@@ -304,6 +322,11 @@ const normalizeLogoInput = (body) => {
     return { error: "companyName is required (1-80 characters)" };
   }
 
+  const companyType = normalizeFullName(raw.companyType);
+  if (companyType.length < 2 || companyType.length > 120) {
+    return { error: "companyType is required (2-120 characters)" };
+  }
+
   const dateOfBirth = parseDateInput(raw.dateOfBirth);
   if (!dateOfBirth) {
     return { error: "dateOfBirth must be a valid past date (YYYY-MM-DD or DD/MM/YYYY)" };
@@ -332,6 +355,7 @@ const normalizeLogoInput = (body) => {
     value: {
       fullName,
       companyName,
+      companyType,
       dateOfBirth,
       birthTime,
       location,
@@ -356,6 +380,7 @@ const buildLogoDesign = (input) => {
   const muhurat = muhuratNumber(input.birthTime);
   const muhuratTheme = themeFor(muhurat);
   const monogram = buildMonogram(input.companyName, input.fullName);
+  const companyType = input.companyType;
 
   const numbers = {
     mulank: {
@@ -394,6 +419,7 @@ const buildLogoDesign = (input) => {
 
   const design = {
     companyName: input.companyName,
+    companyType,
     fullName: input.fullName,
     location: input.location,
     birthTime: input.birthTime,
@@ -403,6 +429,7 @@ const buildLogoDesign = (input) => {
     tagline,
     concept: fallbackConcept({
       companyName: input.companyName,
+      companyType,
       fullName: input.fullName,
       location: input.location,
       theme,
@@ -422,6 +449,7 @@ const buildLogoDesign = (input) => {
       muhuratTheme: supportTheme,
       monogram,
       companyName: input.companyName,
+      companyType,
       tagline,
     }),
     disclaimer:

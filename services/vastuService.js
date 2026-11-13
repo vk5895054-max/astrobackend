@@ -160,7 +160,9 @@ const normalizeReport = (parsed, rawText) => {
         direction: asString(
           item.direction || item.side || item.facing || item.orientation,
         ),
-        severity: normalizeSeverity(item.severity || item.priority || item.level),
+        severity: normalizeSeverity(
+          item.severity || item.priority || item.level,
+        ),
         observation,
         remedy,
       };
@@ -350,7 +352,10 @@ const analyzeVastu = async ({
       await ai.files
         .delete({ name: uploadedVideo.name })
         .catch((error) =>
-          console.warn("[Vastu] could not delete uploaded video:", error.message),
+          console.warn(
+            "[Vastu] could not delete uploaded video:",
+            error.message,
+          ),
         );
     }
   }

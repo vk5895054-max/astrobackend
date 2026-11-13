@@ -17,9 +17,17 @@ const logoDesignSchema = new mongoose.Schema(
       trim: true,
       maxlength: 80,
     },
+    companyType: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 2,
+      maxlength: 120,
+    },
     input: {
       fullName: { type: String, trim: true, maxlength: 100 },
       companyName: { type: String, trim: true, maxlength: 80 },
+      companyType: { type: String, trim: true, minlength: 2, maxlength: 120 },
       dateOfBirth: { type: Date },
       birthTime: { type: String, trim: true, maxlength: 5 },
       location: { type: String, trim: true, maxlength: 100 },

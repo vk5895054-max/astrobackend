@@ -44,9 +44,20 @@ const toCard = (profile, extra = {}) => ({
 // GET /api/astrologers — client listing with search/filter/sort
 const listAstrologers = async (req, res, next) => {
   try {
-    const { search, expertise, language, maxRate, minRating, online, sort = "rating" } = req.query;
+    const {
+      search,
+      expertise,
+      language,
+      maxRate,
+      minRating,
+      online,
+      sort = "rating",
+    } = req.query;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      100,
+    );
 
     const filter = { isVerified: true };
     if (expertise) filter.expertise = { $in: [expertise] };
@@ -54,7 +65,10 @@ const listAstrologers = async (req, res, next) => {
     if (minRating) filter.ratingAvg = { $gte: Number(minRating) };
     if (maxRate) {
       const r = Number(maxRate);
-      filter.$or = [{ rateChatPerMin: { $lte: r } }, { rateCallPerMin: { $lte: r } }];
+      filter.$or = [
+        { rateChatPerMin: { $lte: r } },
+        { rateCallPerMin: { $lte: r } },
+      ];
     }
     if (online === "true") filter.isOnline = true;
     if (search) {
@@ -62,7 +76,9 @@ const listAstrologers = async (req, res, next) => {
     }
 
     // Exclude deactivated users
-    const activeUsers = await User.find({ role: "astrologer", isActive: true }).select("_id").lean();
+    const activeUsers = await User.find({ role: "astrologer", isActive: true })
+      .select("_id")
+      .lean();
     filter.user = { $in: activeUsers.map((u) => u._id) };
 
     const sortMap = {
@@ -94,15 +110,22 @@ const listAstrologers = async (req, res, next) => {
           freeRemainingSec,
           hasFreeTrial: freeRemainingSec > 0,
         });
-      })
+      }),
     );
 
     res.json({
       success: true,
       data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 // GET /api/astrologers/:id (also supports :id === 'me' for the signed-in astrologer)
@@ -110,12 +133,24 @@ const getAstrologerDetail = async (req, res, next) => {
   try {
     const targetId = req.params.id === "me" ? req.user?._id : req.params.id;
     if (!targetId || !mongoose.isValidObjectId(targetId)) {
-      return res.status(400).json({ success: false, message: "Invalid astrologer id" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid astrologer id" });
     }
-    const user = await User.findOne({ _id: targetId, role: "astrologer", isActive: true }).lean();
-    if (!user) return res.status(404).json({ success: false, message: "Astrologer not found" });
+    const user = await User.findOne({
+      _id: targetId,
+      role: "astrologer",
+      isActive: true,
+    }).lean();
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "Astrologer not found" });
     const profile = await AstrologerProfile.findOne({ user: user._id }).lean();
-    if (!profile) return res.status(404).json({ success: false, message: "Astrologer profile not found" });
+    if (!profile)
+      return res
+        .status(404)
+        .json({ success: false, message: "Astrologer profile not found" });
 
     const freeRemainingSec = req.user
       ? await freeRemainingSecFor(req.user._id, profile)
@@ -134,33 +169,34 @@ const getAstrologerDetail = async (req, res, next) => {
     if (req.user?._id) {
       const isViewingOther = String(req.user._id) !== String(user._id);
       try {
-        const [savedHd, horoscope, activeMatch, sharedReadings] = await Promise.all([
-          HumanDesignChart.findOne({ user: req.user._id }).lean(),
-          Horoscope.findOne({ user: req.user._id }).lean(),
-          isViewingOther
-            ? Match.findOne({
-                matchType: "consultation",
-                status: { $in: ["accepted", "active"] },
-                $or: [
-                  { userA: req.user._id, userB: user._id },
-                  { userA: user._id, userB: req.user._id },
-                ],
-              })
-                .select("_id status")
-                .sort({ updatedAt: -1 })
-                .lean()
-            : Promise.resolve(null),
-          isViewingOther
-            ? AstrologerReading.find({
-                user: req.user._id,
-                astrologer: user._id,
-                sharedWithAstrologer: true,
-              })
-                .sort({ createdAt: -1 })
-                .limit(5)
-                .lean()
-            : Promise.resolve([]),
-        ]);
+        const [savedHd, horoscope, activeMatch, sharedReadings] =
+          await Promise.all([
+            HumanDesignChart.findOne({ user: req.user._id }).lean(),
+            Horoscope.findOne({ user: req.user._id }).lean(),
+            isViewingOther
+              ? Match.findOne({
+                  matchType: "consultation",
+                  status: { $in: ["accepted", "active"] },
+                  $or: [
+                    { userA: req.user._id, userB: user._id },
+                    { userA: user._id, userB: req.user._id },
+                  ],
+                })
+                  .select("_id status")
+                  .sort({ updatedAt: -1 })
+                  .lean()
+              : Promise.resolve(null),
+            isViewingOther
+              ? AstrologerReading.find({
+                  user: req.user._id,
+                  astrologer: user._id,
+                  sharedWithAstrologer: true,
+                })
+                  .sort({ createdAt: -1 })
+                  .limit(5)
+                  .lean()
+              : Promise.resolve([]),
+          ]);
 
         let hdDoc = savedHd;
         if ((!hdDoc || !hdDoc.about || !hdDoc.love) && horoscope?.dateOfBirth) {
@@ -176,7 +212,9 @@ const getAstrologerDetail = async (req, res, next) => {
         }
         myChartSummary = summarizeHumanDesignChart(hdDoc);
         activeConsultationMatchId = activeMatch?._id || null;
-        recentSharedReadings = Array.isArray(sharedReadings) ? sharedReadings : [];
+        recentSharedReadings = Array.isArray(sharedReadings)
+          ? sharedReadings
+          : [];
       } catch (contextErr) {
         // Non-fatal: still return core astrologer detail
       }
@@ -185,12 +223,15 @@ const getAstrologerDetail = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        ...toCard({ ...profile, user }, {
-          isBusy: isUserInCall(String(user._id)),
-          freeRemainingSec,
-          hasFreeTrial: freeRemainingSec > 0,
-          email: undefined,
-        }),
+        ...toCard(
+          { ...profile, user },
+          {
+            isBusy: isUserInCall(String(user._id)),
+            freeRemainingSec,
+            hasFreeTrial: freeRemainingSec > 0,
+            email: undefined,
+          },
+        ),
         supportedFeatures: {
           kundliMilan: true,
           kundliAi: true,
@@ -202,14 +243,19 @@ const getAstrologerDetail = async (req, res, next) => {
         recentReviews,
       },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 // GET /api/astrologers/:id/reviews
 const listReviews = async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      100,
+    );
     const [items, total] = await Promise.all([
       Review.find({ astrologer: req.params.id })
         .populate("client", "name")
@@ -219,8 +265,19 @@ const listReviews = async (req, res, next) => {
         .lean(),
       Review.countDocuments({ astrologer: req.params.id }),
     ]);
-    res.json({ success: true, data: items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } });
-  } catch (error) { next(error); }
+    res.json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 // PATCH /api/astrologer/availability — astrologer toggles online
@@ -228,45 +285,94 @@ const updateAvailability = async (req, res, next) => {
   try {
     const { isOnline } = req.body;
     if (typeof isOnline !== "boolean") {
-      return res.status(400).json({ success: false, message: "isOnline (boolean) is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "isOnline (boolean) is required" });
     }
     const profile = await AstrologerProfile.findOneAndUpdate(
       { user: req.user._id },
       { isOnline },
-      { new: true }
+      { new: true },
     );
-    if (!profile) return res.status(404).json({ success: false, message: "Astrologer profile not found" });
+    if (!profile)
+      return res
+        .status(404)
+        .json({ success: false, message: "Astrologer profile not found" });
     const io = getIo();
-    if (io) io.emit("astrologer:status", { astrologerId: String(req.user._id), isOnline, isBusy: isUserInCall(String(req.user._id)) });
-    res.json({ success: true, message: isOnline ? "You are now online" : "You are now offline", data: profile });
-  } catch (error) { next(error); }
+    if (io)
+      io.emit("astrologer:status", {
+        astrologerId: String(req.user._id),
+        isOnline,
+        isBusy: isUserInCall(String(req.user._id)),
+      });
+    res.json({
+      success: true,
+      message: isOnline ? "You are now online" : "You are now offline",
+      data: profile,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 const updateOwnProfile = async (req, res, next) => {
   try {
-    const allowed = ["displayName", "photo", "bio", "expertise", "languages", "experienceYears", "rateChatPerMin", "rateCallPerMin"];
+    const allowed = [
+      "displayName",
+      "photo",
+      "bio",
+      "expertise",
+      "languages",
+      "experienceYears",
+      "rateChatPerMin",
+      "rateCallPerMin",
+    ];
     const update = {};
-    for (const key of allowed) if (req.body[key] !== undefined) update[key] = req.body[key];
-    if (update.expertise && !Array.isArray(update.expertise)) return res.status(400).json({ success: false, message: "expertise must be an array" });
-    if (update.languages && !Array.isArray(update.languages)) return res.status(400).json({ success: false, message: "languages must be an array" });
-    const profile = await AstrologerProfile.findOneAndUpdate({ user: req.user._id }, update, { new: true, runValidators: true });
-    if (!profile) return res.status(404).json({ success: false, message: "Astrologer profile not found" });
+    for (const key of allowed)
+      if (req.body[key] !== undefined) update[key] = req.body[key];
+    if (update.expertise && !Array.isArray(update.expertise))
+      return res
+        .status(400)
+        .json({ success: false, message: "expertise must be an array" });
+    if (update.languages && !Array.isArray(update.languages))
+      return res
+        .status(400)
+        .json({ success: false, message: "languages must be an array" });
+    const profile = await AstrologerProfile.findOneAndUpdate(
+      { user: req.user._id },
+      update,
+      { new: true, runValidators: true },
+    );
+    if (!profile)
+      return res
+        .status(404)
+        .json({ success: false, message: "Astrologer profile not found" });
     res.json({ success: true, message: "Profile updated", data: profile });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 const getAstrologerChats = async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      100,
+    );
     const filter = {
       matchType: "consultation",
       $or: [{ userA: req.user._id }, { userB: req.user._id }],
     };
     if (req.query.status) filter.status = req.query.status;
     const [matches, total] = await Promise.all([
-      Match.find(filter).sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit)
-        .populate("userA", "name").populate("userB", "name").lean(),
+      Match.find(filter)
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate("userA", "name")
+        .populate("userB", "name")
+        .lean(),
       Match.countDocuments(filter),
     ]);
     const matchIds = matches.map((m) => m._id);
@@ -279,7 +385,26 @@ const getAstrologerChats = async (req, res, next) => {
       Message.aggregate([
         { $match: { match: { $in: matchIds } } },
         { $sort: { createdAt: -1 } },
-        { $group: { _id: "$match", lastMessage: { $first: "$$ROOT" }, unreadCount: { $sum: { $cond: [{ $and: [{ $eq: ["$recipient", req.user._id] }, { $eq: ["$readAt", null] }] }, 1, 0] } } } },
+        {
+          $group: {
+            _id: "$match",
+            lastMessage: { $first: "$$ROOT" },
+            unreadCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$recipient", req.user._id] },
+                      { $eq: ["$readAt", null] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
       ]),
       clientIds.length > 0
         ? AstrologerReading.aggregate([
@@ -308,7 +433,8 @@ const getAstrologerChats = async (req, res, next) => {
       data: matches.map((m) => {
         const idA = m.userA?._id || m.userA;
         const idB = m.userB?._id || m.userB;
-        const clientId = String(idA) === String(req.user._id) ? String(idB) : String(idA);
+        const clientId =
+          String(idA) === String(req.user._id) ? String(idB) : String(idA);
         const readingMeta = readingMap.get(clientId);
         return {
           ...m,
@@ -320,18 +446,32 @@ const getAstrologerChats = async (req, res, next) => {
           lastSharedReadingAt: readingMeta?.latestAt || null,
         };
       }),
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 const getAstrologerQueue = async (req, res, next) => {
   try {
-    const items = await ConsultationQueue.find({ astrologer: req.user._id, status: "waiting" })
-      .populate("client", "name email").sort({ createdAt: 1 }).lean();
+    const items = await ConsultationQueue.find({
+      astrologer: req.user._id,
+      status: "waiting",
+    })
+      .populate("client", "name email")
+      .sort({ createdAt: 1 })
+      .lean();
     const queued = items.map((q, i) => ({ ...q, position: i + 1 }));
     res.json({ success: true, data: queued });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 // GET /api/astrologer/earnings
@@ -339,17 +479,29 @@ const getEarnings = async (req, res, next) => {
   try {
     const { from, to } = req.query;
     const dateFilter = {};
-    if (from && !Number.isNaN(Date.parse(from))) dateFilter.$gte = new Date(from);
+    if (from && !Number.isNaN(Date.parse(from)))
+      dateFilter.$gte = new Date(from);
     if (to && !Number.isNaN(Date.parse(to))) dateFilter.$lte = new Date(to);
     const txFilter = { user: req.user._id, reason: "consultation_earning" };
-    if (dateFilter.$gte || dateFilter.$lte) txFilter.createdAt = { ...(dateFilter.$gte ? { $gte: dateFilter.$gte } : {}), ...(dateFilter.$lte ? { $lte: dateFilter.$lte } : {}) };
+    if (dateFilter.$gte || dateFilter.$lte)
+      txFilter.createdAt = {
+        ...(dateFilter.$gte ? { $gte: dateFilter.$gte } : {}),
+        ...(dateFilter.$lte ? { $lte: dateFilter.$lte } : {}),
+      };
 
     const [earningTxs, profile] = await Promise.all([
-      WalletTransaction.find(txFilter).sort({ createdAt: -1 }).limit(200).lean(),
+      WalletTransaction.find(txFilter)
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean(),
       AstrologerProfile.findOne({ user: req.user._id }).lean(),
     ]);
     const totalEarnings = earningTxs.reduce((s, t) => s + t.amount, 0);
-    const sessions = await Match.countDocuments({ matchType: "consultation", $or: [{ userA: req.user._id }, { userB: req.user._id }], status: "ended" });
+    const sessions = await Match.countDocuments({
+      matchType: "consultation",
+      $or: [{ userA: req.user._id }, { userB: req.user._id }],
+      status: "ended",
+    });
     res.json({
       success: true,
       data: {
@@ -362,7 +514,9 @@ const getEarnings = async (req, res, next) => {
         recentEarnings: earningTxs,
       },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = {

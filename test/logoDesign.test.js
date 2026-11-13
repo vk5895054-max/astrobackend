@@ -11,6 +11,7 @@ const {
 const validInput = {
   fullName: "Riya Mehta",
   companyName: "Aarav Studio",
+  companyType: "Interior design studio",
   dateOfBirth: "1995-08-23",
   birthTime: "09:15",
   location: "Ahmedabad",
@@ -24,6 +25,7 @@ test("normalizes a valid logo request", () => {
   });
   assert.equal(result.error, undefined);
   assert.equal(result.value.fullName, "Riya Mehta");
+  assert.equal(result.value.companyType, "Interior design studio");
   assert.equal(result.value.birthTime, "09:05");
   assert.equal(result.value.dateOfBirth.toISOString().slice(0, 10), "1995-08-23");
 });
@@ -31,6 +33,7 @@ test("normalizes a valid logo request", () => {
 test("rejects missing or malformed fields", () => {
   assert.match(normalizeLogoInput({ ...validInput, fullName: "" }).error, /fullName/);
   assert.match(normalizeLogoInput({ ...validInput, companyName: "" }).error, /companyName/);
+  assert.match(normalizeLogoInput({ ...validInput, companyType: "" }).error, /companyType/);
   assert.match(normalizeLogoInput({ ...validInput, dateOfBirth: "31/02/1995" }).error, /dateOfBirth/);
   assert.match(normalizeLogoInput({ ...validInput, birthTime: "24:00" }).error, /birthTime/);
   assert.match(normalizeLogoInput({ ...validInput, location: "" }).error, /location/);
@@ -52,6 +55,7 @@ test("builds a complete design with three renderable variants", () => {
   const design = buildLogoDesign(validInput);
 
   assert.equal(design.companyName, "Aarav Studio");
+  assert.equal(design.companyType, "Interior design studio");
   assert.equal(design.monogram, "AS");
   assert.equal(design.dateOfBirth, "1995-08-23");
   assert.equal(design.numbers.mulank.value, 5);
@@ -73,10 +77,12 @@ test("builds a complete design with three renderable variants", () => {
     assert.ok(variant.motif);
     assert.ok(variant.tagline);
     assert.equal(variant.companyName, "Aarav Studio");
+    assert.equal(variant.companyType, "Interior design studio");
   }
 
   assert.ok(design.tagline.length > 0);
   assert.ok(design.concept.includes("Aarav Studio"));
+  assert.ok(design.concept.includes("Interior design studio"));
   assert.ok(design.whyItFits.length >= 3);
 });
 

@@ -5,6 +5,7 @@ const {
   normalizeLogoInput,
 } = require("../services/logo/logoDesignService");
 const { enrichDesign, analyzeLogo } = require("../services/logo/logoAiService");
+const { generateLogoImages } = require("../services/logo/logoImageService");
 
 const cleanField = (value, maxLength) => {
   if (typeof value !== "string") return "";
@@ -21,7 +22,7 @@ const designPayload = (doc) => ({
 });
 
 // POST /api/logo/generate
-// body: { fullName, companyName, dateOfBirth, birthTime, location }
+// body: { fullName, companyName, companyType, dateOfBirth, birthTime, location }
 const generate = async (req, res, next) => {
   try {
     const parsed = normalizeLogoInput(req.body);
@@ -33,14 +34,17 @@ const generate = async (req, res, next) => {
     // Deterministic design first so the response is never blocked by the LLM;
     // enrichment only rewrites the concept/tagline copy.
     const base = buildLogoDesign(input);
-    const design = await enrichDesign(base);
+    const enrichedDesign = await enrichDesign(base);
+    const design = await generateLogoImages(enrichedDesign, req.user._id);
 
     const doc = await LogoDesign.create({
       user: req.user._id,
       companyName: input.companyName,
+      companyType: input.companyType,
       input: {
         fullName: input.fullName,
         companyName: input.companyName,
+        companyType: input.companyType,
         dateOfBirth: input.dateOfBirth,
         birthTime: input.birthTime,
         location: input.location,
