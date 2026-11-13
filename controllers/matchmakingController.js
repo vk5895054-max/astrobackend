@@ -235,17 +235,20 @@ const getRecommendations = async (req, res, next) => {
         // Same A/B ordering as calculateMatch, so the Vedic sign rules get the
         // right gender for each side.
         const [candidateA, candidateB] = orderedUsers(req.user._id, profile.user);
+        const requesterIsCandidateA = String(candidateA) === String(req.user._id);
+        const candidateQuestionnaire = questionnaireById.get(String(profile.user));
+        const candidateHoroscope = horoscopeById.get(String(profile.user));
         const genderById = new Map([
           [String(req.user._id), myUser?.gender],
           [String(profile.user), user.gender],
         ]);
         const report = calculateCompatibility({
-          profileA: candidateA === String(req.user._id) ? myProfile : profile,
-          questionnaireA: candidateA === String(req.user._id) ? myQuestionnaire : questionnaireById.get(String(profile.user)),
-          horoscopeA: candidateA === String(req.user._id) ? myHoroscope : horoscopeById.get(String(profile.user)),
-          profileB: candidateB === String(req.user._id) ? myProfile : profile,
-          questionnaireB: candidateB === String(req.user._id) ? myQuestionnaire : questionnaireById.get(String(profile.user)),
-          horoscopeB: candidateB === String(req.user._id) ? myHoroscope : horoscopeById.get(String(profile.user)),
+          profileA: requesterIsCandidateA ? myProfile : profile,
+          questionnaireA: requesterIsCandidateA ? myQuestionnaire : candidateQuestionnaire,
+          horoscopeA: requesterIsCandidateA ? myHoroscope : candidateHoroscope,
+          profileB: requesterIsCandidateA ? profile : myProfile,
+          questionnaireB: requesterIsCandidateA ? candidateQuestionnaire : myQuestionnaire,
+          horoscopeB: requesterIsCandidateA ? candidateHoroscope : myHoroscope,
           genderA: genderById.get(String(candidateA)),
           genderB: genderById.get(String(candidateB)),
         });
@@ -255,13 +258,13 @@ const getRecommendations = async (req, res, next) => {
           user.name,
         );
         const chartA =
-          candidateA === String(req.user._id)
+          requesterIsCandidateA
             ? myHumanDesignChart
             : candidateHumanDesignChart;
         const chartB =
-          candidateB === String(req.user._id)
-            ? myHumanDesignChart
-            : candidateHumanDesignChart;
+          requesterIsCandidateA
+            ? candidateHumanDesignChart
+            : myHumanDesignChart;
         const humanDesign = calculateHumanDesignCompatibility(chartA, chartB);
         return {
           user,

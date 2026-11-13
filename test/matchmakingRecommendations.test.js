@@ -94,3 +94,22 @@ test("Human Design compatibility is added to recommendations and saved match rep
     "the existing questionnaire-based score should remain independent of the optional chart section",
   );
 });
+
+test("recommendation inputs are assigned using normalized participant IDs", () => {
+  assert.match(
+    code,
+    /const requesterIsCandidateA = String\(candidateA\) === String\(req\.user\._id\)/,
+    "Mongo ObjectIds must be compared by value, not against strings with strict equality.",
+  );
+  assert.match(
+    code,
+    /questionnaireA:\s*requesterIsCandidateA \? myQuestionnaire : candidateQuestionnaire/,
+  );
+  assert.match(
+    code,
+    /questionnaireB:\s*requesterIsCandidateA \? candidateQuestionnaire : myQuestionnaire/,
+  );
+  assert.match(code, /const chartA =\s*requesterIsCandidateA/);
+  assert.match(code, /const chartB =\s*requesterIsCandidateA/);
+  assert.doesNotMatch(code, /candidate[AB] === String\(req\.user\._id\)/);
+});
