@@ -1,3 +1,18 @@
+const {
+  TYPES,
+  AUTHORITIES,
+  AUTHORITY_LABELS,
+  DEFINITIONS,
+  PROFILES,
+  ENVIRONMENTS,
+  CENTERS,
+  GATES,
+  CHANNELS,
+  LOVE,
+  PLANETS,
+  SIGNS,
+} = require("./humanDesignHindiCatalog");
+
 const HINDI_VALUES = {
   manifestor: "आरंभकर्ता",
   generator: "निर्माता",
@@ -278,6 +293,14 @@ const translateFields = (target, fields) => {
 const localizeCenters = (centers) => {
   if (!Array.isArray(centers)) return;
   for (const center of centers) {
+    const metadata = CENTERS[center.name];
+    if (metadata) {
+      center.displayName = metadata.displayName;
+      center.keywords = [...metadata.keywords];
+      center.keywordsText = metadata.keywords.join(", ");
+      center.description = center.defined ? metadata.defined : metadata.open;
+      center.statusLabel = center.defined ? "परिभाषित" : "अपरिभाषित";
+    }
     translateFields(center, [
       "displayName",
       "statusLabel",
@@ -291,36 +314,90 @@ const localizeCenters = (centers) => {
 const localizeGates = (gates) => {
   if (!Array.isArray(gates)) return;
   for (const gate of gates) {
+    const metadata = GATES[gate.number];
+    if (metadata) {
+      [gate.name, gate.keynote, gate.description] = metadata;
+      gate.label = `द्वार ${gate.number}`;
+    }
     translateFields(gate, ["label", "name", "keynote", "description"]);
+    localizeActivations(gate.activations);
   }
 };
 
 const localizeChannels = (channels) => {
   if (!Array.isArray(channels)) return;
   for (const channel of channels) {
+    const metadata = CHANNELS[channel.id];
+    if (metadata) {
+      channel.name = metadata[0];
+      channel.title = `मार्ग ${channel.id}`;
+      channel.description = metadata[1];
+    }
     translateFields(channel, ["title", "name", "description"]);
   }
 };
 
+const localizeActivations = (activations) => {
+  if (!Array.isArray(activations)) return;
+  for (const activation of activations) {
+    if (PLANETS[activation.planet]) activation.planet = PLANETS[activation.planet];
+    if (SIGNS[activation.sign]) activation.sign = SIGNS[activation.sign];
+    const gateMetadata = GATES[activation.gate];
+    if (gateMetadata) activation.gateName = gateMetadata[0];
+  }
+};
+
 const localizeEnvironment = (environment) => {
-  translateFields(environment, ["name", "polarity", "label", "description"]);
+  if (!environment || typeof environment !== "object") return;
+  const metadata = ENVIRONMENTS[environment.color];
+  if (metadata) {
+    environment.name = metadata.name;
+    const polarity = typeof environment.polarity === "string"
+      ? environment.polarity
+      : "";
+    environment.polarity =
+      metadata.polarity[polarity.split("/")[0].trim()] ||
+      metadata.polarity[polarity] ||
+      translateText(polarity);
+    environment.description = metadata.description;
+  } else {
+    environment.name = translateText(environment?.name);
+    environment.polarity = translateText(environment?.polarity);
+    environment.description = translateText(environment?.description);
+  }
   if (environment?.name && environment?.polarity) {
     environment.label = `${environment.name} (${environment.polarity})`;
   }
 };
 
 const localizeCross = (cross) => {
-  translateFields(cross, ["angle", "name", "summary"]);
+  if (!cross || typeof cross !== "object") return;
+  const angleLabel = {
+    "Right Angle": "दक्षिण-कोण",
+    "Left Angle": "वाम-कोण",
+    Juxtaposition: "सन्निहित",
+  }[cross.angle];
+  cross.angle = angleLabel || translateText(cross.angle);
+  const gateName = GATES[cross.gates?.[0]]?.[0];
+  if (gateName) cross.name = `${cross.angle} जीवन-पथ: ${gateName}`;
+  else cross.name = translateText(cross.name);
   if (typeof cross?.summary === "string") {
     cross.summary = cross.summary
       .replace(/\bSun\b/g, "सूर्य")
       .replace(/\bEarth\b/g, "पृथ्वी")
-      .replace(/\bPersonality\b/g, "व्यक्तित्व")
-      .replace(/\bDesign\b/g, "रचना");
+      .replace(/\(Personality\)/g, "(व्यक्तित्व)")
+      .replace(/\(Design\)/g, "(रचना)")
+      .replace(/\s*&\s*/g, " और ");
   }
 };
 
-const localizeLove = (love) => {
+const localizeLove = (love, chartType) => {
+  if (!love || typeof love !== "object") return;
+  const metadata = LOVE[chartType];
+  if (metadata) {
+    Object.assign(love, metadata);
+    love.type = TYPES[chartType]?.label || love.type;
+  }
   translateFields(love, [
     "badge",
     "title",
@@ -334,27 +411,64 @@ const localizeLove = (love) => {
   localizeGates(love?.activeLoveGates);
 };
 
-const localizeAbout = (about) => {
-  translateFields(about?.yourType, [
-    "label",
-    "subtitle",
-    "description",
-    "strategy",
-    "signature",
-    "notSelfTheme",
-  ]);
-  translateFields(about?.profile, ["name", "label", "description"]);
-  translateFields(about?.authorityAndStrategy, [
-    "authority",
-    "strategy",
-    "label",
-    "description",
-  ]);
-  translateFields(about?.notSelfTheme, ["label", "description"]);
-  localizeEnvironment(about?.environment);
-  translateFields(about?.definition, ["label", "description"]);
-  translateFields(about?.signature, ["label", "description"]);
-  localizeCross(about?.incarnationCross);
+const localizeTypeAndAbout = (chart) => {
+  const type = TYPES[chart.type];
+  if (type) {
+    chart.typeLabel = type.label;
+    chart.strategy = type.strategy;
+    chart.signature = type.signature;
+    chart.notSelfTheme = type.notSelfTheme;
+    const aboutType = chart.about?.yourType;
+    if (aboutType) {
+      Object.assign(aboutType, {
+        label: type.label,
+        subtitle: "आपका प्रकार",
+        description: type.description,
+        strategy: type.strategy,
+        signature: type.signature,
+        notSelfTheme: type.notSelfTheme,
+      });
+    }
+    if (chart.about?.notSelfTheme) {
+      chart.about.notSelfTheme.label = type.notSelfTheme;
+      chart.about.notSelfTheme.description = type.notSelfDescription;
+    }
+    if (chart.about?.signature) {
+      chart.about.signature.label = type.signature;
+      chart.about.signature.description = `${type.signature} का अनुभव इस बात का संकेत है कि आप अपनी रणनीति और आंतरिक मार्गदर्शन के अनुरूप हैं।`;
+    }
+  }
+
+  const profile = PROFILES[chart.profile];
+  if (profile) {
+    chart.profileLabel = `${chart.profile} ${profile[0]}`;
+    if (chart.about?.profile) {
+      chart.about.profile.name = profile[0];
+      chart.about.profile.label = chart.profileLabel;
+      chart.about.profile.description = profile[1];
+    }
+  }
+
+  const authority = chart.authority;
+  const authorityLabel = AUTHORITY_LABELS[authority];
+  if (authorityLabel) chart.authority = authorityLabel;
+  if (chart.about?.authorityAndStrategy) {
+    const authorityInfo = chart.about.authorityAndStrategy;
+    authorityInfo.authority = authorityLabel || translateText(authorityInfo.authority);
+    authorityInfo.label = authorityInfo.authority;
+    authorityInfo.strategy = type?.strategy || translateText(authorityInfo.strategy);
+    authorityInfo.description = AUTHORITIES[authority] || translateText(authorityInfo.description);
+  }
+
+  const definition = DEFINITIONS[chart.definition];
+  if (definition) {
+    chart.definition = definition.label;
+    if (chart.about?.definition) {
+      chart.about.definition.label = definition.label;
+      chart.about.definition.description = definition.description;
+    }
+  }
+
 };
 
 const localizeHumanDesignChart = (chart, language) => {
@@ -364,9 +478,9 @@ const localizeHumanDesignChart = (chart, language) => {
   const localized = clone(
     typeof chart.toObject === "function" ? chart.toObject() : chart,
   );
-  translateFields(localized, ["definedCenters"]);
+  localizeTypeAndAbout(localized);
   localizeChannels(localized.definedChannels);
-  translateFields(localized.loveForType, ["title", "type", "headline"]);
+  localizeLove(localized.loveForType, localized.type);
   translateFields(localized, [
     "typeLabel",
     "profileLabel",
@@ -375,19 +489,25 @@ const localizeHumanDesignChart = (chart, language) => {
     "signature",
     "notSelfTheme",
     "definition",
+    "definedCenters",
   ]);
   localizeEnvironment(localized.environment);
   localizeCross(localized.incarnationCross);
   localizeCenters(localized.centers);
   localizeGates(localized.gates);
   localizeChannels(localized.channels);
-  localizeLove(localized.love);
-  localizeAbout(localized.about);
+  localizeActivations(localized.personality);
+  localizeActivations(localized.design);
+  localizeLove(localized.love, localized.type);
   if (localized.bodyGraph) {
+    localizeActivations(localized.bodyGraph.design);
+    localizeActivations(localized.bodyGraph.personality);
     localizeCenters(localized.bodyGraph.centers);
     localizeChannels(localized.bodyGraph.channels);
     localizeGates(localized.bodyGraph.activeGates);
   }
+  if (localized.about?.environment) localizeEnvironment(localized.about.environment);
+  if (localized.about?.incarnationCross) localizeCross(localized.about.incarnationCross);
   return localized;
 };
 
