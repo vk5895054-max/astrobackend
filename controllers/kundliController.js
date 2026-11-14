@@ -19,6 +19,7 @@ const {
   calculateHumanDesignChart,
   summarizeHumanDesignChart,
 } = require("../services/humanDesignService");
+const { localizeHumanDesignChart } = require("../services/humanDesignLocalizationService");
 const { resolveBirthLocationFromPlace } = require("../services/birthLocationService");
 const { askAstroQuestion } = require("../services/rag/ragService");
 const { buildChartContextForQA } = require("../services/vedicAstrologyService");
@@ -823,17 +824,19 @@ const myChart = async (req, res, next) => {
       forceRecalculate: recalculate,
     });
 
+    const language = req.language || req.get("accept-language") || "";
+    const localizedChart = localizeHumanDesignChart(chart, language);
     const requestedTab = normalizeMyChartTab(mergedInput.tab);
     const data = requestedTab
       ? {
           activeTab: requestedTab,
-          section: chart[requestedTab],
-          summary: summarizeHumanDesignChart(chart),
-          ...chart,
+          section: localizedChart[requestedTab],
+          summary: summarizeHumanDesignChart(localizedChart),
+          ...localizedChart,
         }
       : {
-          summary: summarizeHumanDesignChart(chart),
-          ...chart,
+          summary: summarizeHumanDesignChart(localizedChart),
+          ...localizedChart,
         };
 
     return res.status(200).json({

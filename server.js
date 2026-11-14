@@ -12,6 +12,7 @@ const connectDB = require("./config/db");
 const { setupChatSockets } = require("./services/chatSocketService");
 const { setIo } = require("./services/socketHub");
 const { startBillingSweep } = require("./services/consultationBilling");
+const apiLanguageMiddleware = require("./middlewares/apiLanguageMiddleware");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -19,6 +20,7 @@ const httpServer = http.createServer(app);
 // Behind Render's proxy this is required so rate limiting sees the real
 // client IP instead of the proxy's (which would throttle every user as one).
 app.set("trust proxy", 1);
+app.use(apiLanguageMiddleware);
 
 // Database
 connectDB();
