@@ -25,6 +25,21 @@ const getDefinedCenters = (chart) =>
       .filter(Boolean),
   );
 
+const normalize = (value) => String(value || "").trim().toLowerCase();
+
+const ratingFor = (score) => ({
+  score,
+  maxScore: 5,
+  label: score >= 4 ? "Good" : "Fair",
+  method: "chart_similarity_heuristic",
+});
+
+const profileLines = (chart) =>
+  String(chart.profile || chart.profileLabel || "")
+    .split("/")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
 const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
   const chartA = asPlainChart(rawChartA);
   const chartB = asPlainChart(rawChartB);
@@ -53,6 +68,32 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
     .sort();
   const sharedCenters = [...centersA].filter((center) => centersB.has(center)).sort();
   const sharedGates = [...gatesA].filter((gate) => gatesB.has(gate)).sort((a, b) => a - b);
+  const dissonantCenters = [...new Set([...centersA, ...centersB])]
+    .filter((center) => centersA.has(center) !== centersB.has(center))
+    .sort()
+    .map((name) => ({
+      name,
+      definedBy: centersA.has(name) ? "personA" : "personB",
+    }));
+  const compromiseChannels = [];
+  const dominantChannels = [];
+  for (const channel of CHANNELS_META) {
+    const [gateA, gateB] = channel.gates;
+    const hasChannelA = channelsA.has(channel.id);
+    const hasChannelB = channelsB.has(channel.id);
+    if (hasChannelA === hasChannelB) continue;
+
+    const otherGates = hasChannelA ? gatesB : gatesA;
+    const definedBy = hasChannelA ? "personA" : "personB";
+    const partnerGate = [gateA, gateB].find((gate) => otherGates.has(gate));
+    const interaction = { id: channel.id, name: channel.name, definedBy };
+
+    if (partnerGate !== undefined) {
+      compromiseChannels.push({ ...interaction, partnerGate });
+    } else {
+      dominantChannels.push(interaction);
+    }
+  }
   const electromagneticChannels = CHANNELS_META.filter((channel) => {
     const [gateA, gateB] = channel.gates;
     return (
@@ -95,6 +136,12 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
 
   const typeA = chartA.typeLabel || chartA.type || "";
   const typeB = chartB.typeLabel || chartB.type || "";
+  const typeRating = ratingFor(normalize(typeA) === normalize(typeB) ? 4 : 3);
+  const profileA = profileLines(chartA);
+  const profileB = profileLines(chartB);
+  const profileRating = ratingFor(
+    profileA.some((line) => profileB.includes(line)) ? 4 : 3,
+  );
   const summary =
     electromagneticChannels.length > 0
       ? `Your active gates complete ${electromagneticChannels.length} channel connection${electromagneticChannels.length === 1 ? "" : "s"}.`
@@ -105,11 +152,19 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
   return {
     typeA,
     typeB,
+    ratings: {
+      type: typeRating,
+      profile: profileRating,
+    },
     summary,
     details,
     sharedCenters,
     sharedChannels,
     sharedGates,
+    resonantCenters: sharedCenters,
+    dissonantCenters,
+    compromiseChannels,
+    dominantChannels,
     electromagneticChannels,
   };
 };
