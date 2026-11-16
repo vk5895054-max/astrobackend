@@ -889,7 +889,7 @@ const listMyAstrologerReadings = async (req, res, next) => {
       }
       filter.astrologer = req.query.astrologerId;
     }
-    if (req.query.kind && ["kundli_milan", "kundli_ai", "my_chart"].includes(req.query.kind)) {
+    if (req.query.kind && ["kundli_milan", "kundli_ai", "my_chart", "bodygraph_compatibility"].includes(req.query.kind)) {
       filter.kind = req.query.kind;
     }
 
@@ -926,7 +926,7 @@ const listIncomingAstrologerReadings = async (req, res, next) => {
       }
       filter.user = req.query.clientId;
     }
-    if (req.query.kind && ["kundli_milan", "kundli_ai", "my_chart"].includes(req.query.kind)) {
+    if (req.query.kind && ["kundli_milan", "kundli_ai", "my_chart", "bodygraph_compatibility"].includes(req.query.kind)) {
       filter.kind = req.query.kind;
     }
 

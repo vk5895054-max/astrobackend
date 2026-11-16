@@ -1,7 +1,7 @@
 const express = require("express");
 const { protect, optionalProtect } = require("../middlewares/authMiddleware");
 const { uploadOptionalImages } = require("../middlewares/uploadMiddleware");
-const { kundliMatch } = require("../controllers/kundliMatchController");
+const { kundliMatch, bodyGraphCompatibility, shareBodyGraphCompatibility } = require("../controllers/kundliMatchController");
 const {
   createSavedKundli,
   deleteSavedKundli,
@@ -34,6 +34,8 @@ router.post("/chat", optionalProtect, uploadOptionalImages, chatKundli);
 // Authenticated user endpoints
 router.get("/my-kundli", protect, getMyKundli);
 router.post("/match", protect, kundliMatch);
+router.post("/bodygraph-compatibility", optionalProtect, bodyGraphCompatibility);
+router.post("/bodygraph-compatibility/share", protect, shareBodyGraphCompatibility);
 router.get("/saved-kundlis", protect, listSavedKundlis);
 router.post("/saved-kundlis", protect, createSavedKundli);
 router.get("/saved-kundlis/:id", protect, getSavedKundli);

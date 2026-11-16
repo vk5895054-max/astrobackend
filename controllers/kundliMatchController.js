@@ -11,8 +11,10 @@
 // factor in the astrologer's own language.
 
 const mongoose = require("mongoose");
+const User = require("../models/user");
 const Horoscope = require("../models/horoscope");
 const SavedKundli = require("../models/savedKundli");
+const AstrologerReading = require("../models/astrologerReading");
 const {
   calculateVedicChart,
   getNakshatra,
@@ -23,6 +25,9 @@ const {
   calculateHumanDesignChart,
   summarizeHumanDesignChart,
 } = require("../services/humanDesignService");
+const {
+  calculateHumanDesignCompatibility,
+} = require("../services/humanDesignCompatibilityService");
 
 const MANGAL_HOUSES = [1, 2, 4, 7, 8, 12];
 
@@ -357,4 +362,193 @@ const kundliMatch = async (req, res, next) => {
   }
 };
 
-module.exports = { kundliMatch, computeKundliMatchData };
+// BodyGraph (Human Design) compatibility for any two people.
+//
+// Unlike the Guna Milan endpoint this does not need the Vedic chart: it takes
+// both people's birth details, computes their Human Design BodyGraphs and
+// compares the defined centers, gates and channels.
+const computeBodyGraphCompatibility = async (reqBody = {}) => {
+  const personAInput =
+    reqBody.personA || reqBody.you || reqBody.self || reqBody.boy || {};
+  const personBInput =
+    reqBody.personB || reqBody.partner || reqBody.girl || {};
+
+  const [personAResult, personBResult] = await Promise.all([
+    resolvePerson(personAInput),
+    resolvePerson(personBInput),
+  ]);
+  if (personAResult.error) {
+    return {
+      statusCode: 400,
+      success: false,
+      message: `Your details: ${personAResult.error}`,
+    };
+  }
+  if (personBResult.error) {
+    return {
+      statusCode: 400,
+      success: false,
+      message: `Partner's details: ${personBResult.error}`,
+    };
+  }
+
+  const chartA = calculateHumanDesignChart({
+    ...personAResult.person,
+    timeOfBirth: personAResult.person.timeOfBirth || "12:00",
+  });
+  const chartB = calculateHumanDesignChart({
+    ...personBResult.person,
+    timeOfBirth: personBResult.person.timeOfBirth || "12:00",
+  });
+
+  const compatibility = calculateHumanDesignCompatibility(chartA, chartB);
+  if (!compatibility) {
+    return {
+      statusCode: 422,
+      success: false,
+      message: "The two bodygraphs could not be compared.",
+    };
+  }
+
+  return {
+    statusCode: 200,
+    success: true,
+    data: {
+      source: "server",
+      generatedAt: new Date().toISOString(),
+      personA: {
+        name: personAResult.person.name,
+        birthDetails: {
+          dateOfBirth: toDateLabel(personAResult.person.dateOfBirth),
+          timeOfBirth: personAResult.person.timeOfBirth || "12:00",
+          place: personAResult.person.place,
+        },
+        summary: summarizeHumanDesignChart(chartA),
+      },
+      personB: {
+        name: personBResult.person.name,
+        birthDetails: {
+          dateOfBirth: toDateLabel(personBResult.person.dateOfBirth),
+          timeOfBirth: personBResult.person.timeOfBirth || "12:00",
+          place: personBResult.person.place,
+        },
+        summary: summarizeHumanDesignChart(chartB),
+      },
+      compatibility,
+    },
+  };
+};
+
+const bodyGraphCompatibility = async (req, res, next) => {
+  try {
+    const result = await computeBodyGraphCompatibility(req.body || {});
+    if (!result.success) {
+      return res.status(result.statusCode).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    return res.json({
+      success: true,
+      message: "Bodygraph compatibility calculated",
+      data: result.data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/kundli/bodygraph-compatibility/share
+//
+// Saves a computed Bodygraph compatibility reading for a specific astrologer,
+// so the human astrologer can see the same result when the client starts a
+// chat consultation. The result is recomputed here rather than trusting a
+// client-provided report.
+const shareBodyGraphCompatibility = async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const astrologerId = body.astrologerId;
+
+    if (!mongoose.isValidObjectId(astrologerId)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid astrologerId is required.",
+      });
+    }
+
+    const astrologer = await User.findOne({
+      _id: astrologerId,
+      role: "astrologer",
+      isActive: true,
+    })
+      .select("_id name")
+      .lean();
+    if (!astrologer) {
+      return res.status(404).json({
+        success: false,
+        message: "Astrologer not found.",
+      });
+    }
+
+    const result = await computeBodyGraphCompatibility(body);
+    if (!result.success) {
+      return res.status(result.statusCode).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    const nameA = result.data.personA?.name || "You";
+    const nameB = result.data.personB?.name || "Partner";
+    const reading = await AstrologerReading.create({
+      user: req.user._id,
+      astrologer: astrologer._id,
+      kind: "bodygraph_compatibility",
+      title: `Bodygraph compatibility: ${nameA} & ${nameB}`,
+      report: result.data,
+      myChartSummary: result.data.personA?.summary || null,
+      sharedWithAstrologer: true,
+    });
+
+    try {
+      const { getIo } = require("../services/socketHub");
+      const io = getIo();
+      if (io) {
+        io.to(`user:${String(astrologer._id)}`).emit(
+          "astrologer:reading-shared",
+          {
+            readingId: String(reading._id),
+            kind: "bodygraph_compatibility",
+            title: reading.title,
+            clientId: String(req.user._id),
+            astrologerId: String(astrologer._id),
+            sharedAt: reading.createdAt,
+          }
+        );
+      }
+    } catch (_) {
+      // A missing socket hub should not fail the share request.
+    }
+
+    return res.json({
+      success: true,
+      message: "Bodygraph compatibility shared with the astrologer",
+      data: {
+        readingId: String(reading._id),
+        astrologerId: String(astrologer._id),
+        astrologerName: astrologer.name || "",
+        compatibility: result.data,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  kundliMatch,
+  computeKundliMatchData,
+  computeBodyGraphCompatibility,
+  bodyGraphCompatibility,
+  shareBodyGraphCompatibility,
+};

@@ -24,7 +24,7 @@ const astrologerReadingSchema = new mongoose.Schema(
     },
     kind: {
       type: String,
-      enum: ["kundli_milan", "kundli_ai", "my_chart"],
+      enum: ["kundli_milan", "kundli_ai", "my_chart", "bodygraph_compatibility"],
       required: true,
     },
     title: {
