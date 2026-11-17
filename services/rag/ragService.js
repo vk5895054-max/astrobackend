@@ -17,13 +17,25 @@ const { answerQuestion } = require("./llmService");
  *   omit it for general "how does X work" questions.
  * @param {number} [options.topK] - number of knowledge base chunks to retrieve (default 6)
  * @param {Array<{buffer: Buffer, mimetype: string}>} [options.images] - optional user images
+ * @param {string} [options.language] - the app's selected locale
  * @returns {Promise<{answer: string, sources: Array<{id, title, section}>}>}
  */
 const askAstroQuestion = async (question, options = {}) => {
-  const { chartContext = null, topK = 6, images = [] } = options;
+  const {
+    chartContext = null,
+    topK = 6,
+    images = [],
+    language = "en-US",
+  } = options;
 
   const chunks = retrieve(question, topK);
-  const answer = await answerQuestion(question, chunks, chartContext, images);
+  const answer = await answerQuestion(
+    question,
+    chunks,
+    chartContext,
+    images,
+    language,
+  );
 
   return {
     answer,

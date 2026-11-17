@@ -34,7 +34,7 @@ const generate = async (req, res, next) => {
     // Deterministic design first so the response is never blocked by the LLM;
     // enrichment only rewrites the concept/tagline copy.
     const base = buildLogoDesign(input);
-    const enrichedDesign = await enrichDesign(base);
+    const enrichedDesign = await enrichDesign(base, req.language);
     const design = await generateLogoImages(enrichedDesign, req.user._id);
 
     const doc = await LogoDesign.create({
@@ -102,6 +102,7 @@ const analyze = async (req, res, next) => {
       image: req.file,
       companyName,
       notes,
+      language: req.language,
     });
 
     const doc = await LogoReview.create({

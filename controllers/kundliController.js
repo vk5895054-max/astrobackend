@@ -588,6 +588,7 @@ const chatKundli = async (req, res, next) => {
       const aiResponse = await askAstroQuestion(enrichedQuestion, {
         chartContext,
         images,
+        language: req.language,
       });
       if (aiResponse && aiResponse.answer && typeof aiResponse.answer === "string" && aiResponse.answer.trim().length > 10) {
         // AI Verification: Check for obvious hallucinations or contradictions

@@ -124,6 +124,7 @@ const ask = async (req, res, next) => {
     const result = await askAstroQuestion(question.trim(), {
       chartContext,
       images: flattenUploadedImages(req.files),
+      language: req.language,
     });
     await AstroConversation.create({
       user: req.user._id,

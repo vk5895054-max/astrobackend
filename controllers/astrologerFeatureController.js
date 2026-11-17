@@ -725,6 +725,7 @@ const chatAstrologerKundliAi = async (req, res, next) => {
       const aiResponse = await askAstroQuestion(`${promptPrefix}${question.trim()}`, {
         chartContext,
         images,
+        language: req.language,
       });
       if (aiResponse?.answer && typeof aiResponse.answer === "string" && aiResponse.answer.trim().length > 10) {
         answer = aiResponse.answer;

@@ -144,6 +144,7 @@ const ask = async (req, res, next) => {
       result = await askNumeroQuestion(question.trim(), {
         numeroContext,
         images: flattenUploadedImages(req.files),
+        language: req.language,
       });
     } catch (askError) {
       // The user got no answer, so they must not be charged for it.

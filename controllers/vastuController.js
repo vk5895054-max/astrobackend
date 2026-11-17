@@ -69,6 +69,7 @@ const analyze = async (req, res, next) => {
       notes: cleanField(req.body?.notes, 1000),
       homeType: cleanField(req.body?.homeType, 80),
       facing: cleanField(req.body?.facing, 80),
+      language: req.language,
     });
 
     return res.json({

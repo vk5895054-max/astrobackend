@@ -3,6 +3,7 @@
 // mobile app can render as findings + remedies.
 
 const { GoogleGenAI } = require("@google/genai");
+const { withResponseLanguage } = require("./aiLanguageService");
 
 const MODEL =
   process.env.VASTU_GOOGLE_MODEL ||
@@ -250,6 +251,7 @@ const analyzeVastu = async ({
   notes = "",
   homeType = "",
   facing = "",
+  language = "en-US",
 }) => {
   if (!ai) {
     const error = new Error(
@@ -268,10 +270,16 @@ const analyzeVastu = async ({
     // The video goes through the File API because inline video is capped at a
     // small request size. The map stays inline — it is small and immediate.
     uploadedVideo = await uploadVideo(video);
+    const localizedSystemPrompt = `${withResponseLanguage(
+      SYSTEM_PROMPT,
+      language,
+    )}
+
+Keep the JSON keys and constrained enum values (verdict, direction, severity) exactly as specified. Write all other user-facing text in the selected response language.`;
 
     const parts = [
       {
-        text: `${SYSTEM_PROMPT}\n\n${buildPrompt({ notes, homeType, facing })}`,
+        text: `${localizedSystemPrompt}\n\n${buildPrompt({ notes, homeType, facing })}`,
       },
       {
         inlineData: {

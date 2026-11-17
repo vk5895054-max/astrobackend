@@ -11,6 +11,7 @@
 // image) is treated as data only.
 
 const Groq = require("groq-sdk");
+const { withResponseLanguage } = require("../aiLanguageService");
 
 const MODEL =
   process.env.LOGO_GROQ_MODEL ||
@@ -144,7 +145,7 @@ const buildEnrichPrompt = (design) => {
   ].join("\n");
 };
 
-const enrichDesign = async (design) => {
+const enrichDesign = async (design, language = "en-US") => {
   if (!ai) return design;
 
   const controller = new AbortController();
@@ -154,7 +155,12 @@ const enrichDesign = async (design) => {
     const response = await ai.chat.completions.create({
       model: MODEL,
       messages: [
-        { role: "system", content: ENRICH_PROMPT },
+        {
+          role: "system",
+          content: `${withResponseLanguage(ENRICH_PROMPT, language)}
+
+Keep the JSON keys exactly as specified and write all generated copy in the selected response language.`,
+        },
         { role: "user", content: buildEnrichPrompt(design) },
       ],
       response_format: { type: "json_object" },
@@ -255,7 +261,12 @@ const verdictFor = (score) => {
   return "Rework recommended";
 };
 
-const analyzeLogo = async ({ image, companyName = "", notes = "" }) => {
+const analyzeLogo = async ({
+  image,
+  companyName = "",
+  notes = "",
+  language = "en-US",
+}) => {
   if (!ai) {
     throw failure(
       "Logo review is not configured. Add GROQ_API_KEY and try again later.",
@@ -288,7 +299,12 @@ const analyzeLogo = async ({ image, companyName = "", notes = "" }) => {
     const response = await ai.chat.completions.create({
       model: VISION_MODEL,
       messages: [
-        { role: "system", content: ANALYSIS_PROMPT },
+        {
+          role: "system",
+          content: `${withResponseLanguage(ANALYSIS_PROMPT, language)}
+
+Keep the JSON keys, score, and constrained verdict values exactly as specified. Write all other user-facing text in the selected response language.`,
+        },
         { role: "user", content: userContent },
       ],
       response_format: { type: "json_object" },

@@ -1,6 +1,7 @@
 // Multi-provider AI service: OpenRouter (primary) → Groq → Gemini → Cloudflare Workers AI
 const { GoogleGenAI } = require("@google/genai");
 const Groq = require("groq-sdk");
+const { withResponseLanguage } = require("../aiLanguageService");
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -282,7 +283,12 @@ function classifyError(providerName, error) {
   return { fatal: false, type: 'unknown', retryable: true };
 }
 
-async function callProvider(provider, userMessage, images = []) {
+async function callProvider(
+  provider,
+  userMessage,
+  images = [],
+  systemPrompt = SYSTEM_PROMPT,
+) {
   const { name, client, model, timeout } = provider;
   
   const controller = new AbortController();
@@ -298,7 +304,7 @@ async function callProvider(provider, userMessage, images = []) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
           ],
           temperature: 0.7,
@@ -330,7 +336,7 @@ async function callProvider(provider, userMessage, images = []) {
       const response = await client.chat.completions.create({
         model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage }
         ],
       }, { signal: controller.signal });
@@ -341,7 +347,7 @@ async function callProvider(provider, userMessage, images = []) {
         contents: {
           role: "user",
           parts: [
-            { text: `${SYSTEM_PROMPT}\n\n${userMessage}` },
+            { text: `${systemPrompt}\n\n${userMessage}` },
             ...images.map((image) => ({
               inlineData: {
                 mimeType: image.mimetype,
@@ -361,7 +367,7 @@ async function callProvider(provider, userMessage, images = []) {
         },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
           ],
           max_tokens: 4096,
@@ -396,13 +402,18 @@ async function callProvider(provider, userMessage, images = []) {
   }
 }
 
-async function tryProvider(provider, userMessage, images = []) {
+async function tryProvider(provider, userMessage, images = [], systemPrompt) {
   const { name, maxAttempts } = provider;
   let lastError;
   
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const result = await callProvider(provider, userMessage, images);
+      const result = await callProvider(
+        provider,
+        userMessage,
+        images,
+        systemPrompt,
+      );
       return { success: true, content: result, provider: name };
     } catch (error) {
       lastError = error;
@@ -450,8 +461,15 @@ async function tryProvider(provider, userMessage, images = []) {
   };
 }
 
-const answerQuestion = async (question, chunks, chartContext, images = []) => {
+const answerQuestion = async (
+  question,
+  chunks,
+  chartContext,
+  images = [],
+  language = "en-US",
+) => {
   const userMessage = buildPrompt(question, chunks, chartContext);
+  const systemPrompt = withResponseLanguage(SYSTEM_PROMPT, language);
   const providerErrors = [];
   const eligibleProviders = images.length
     ? providers.filter((provider) => provider.name === "gemini")
@@ -467,7 +485,12 @@ const answerQuestion = async (question, chunks, chartContext, images = []) => {
   }
   
   for (const provider of eligibleProviders) {
-    const result = await tryProvider(provider, userMessage, images);
+    const result = await tryProvider(
+      provider,
+      userMessage,
+      images,
+      systemPrompt,
+    );
     
     if (result.success) {
       console.log(`[AI] Success with ${result.provider}`);

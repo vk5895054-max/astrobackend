@@ -12,13 +12,25 @@ const { answerNumeroQuestion } = require("./numeroLlmService");
  *   (from numerologyService), e.g. { fullName, dateOfBirth, mulank, bhagyank, nameNumber }
  * @param {number} [options.topK] - number of knowledge base chunks to retrieve (default 6)
  * @param {Array<{buffer: Buffer, mimetype: string}>} [options.images] - optional user images
+ * @param {string} [options.language] - the app's selected locale
  * @returns {Promise<{answer: string, sources: Array<{id, title, section}>}>}
  */
 const askNumeroQuestion = async (question, options = {}) => {
-  const { numeroContext = null, topK = 6, images = [] } = options;
+  const {
+    numeroContext = null,
+    topK = 6,
+    images = [],
+    language = "en-US",
+  } = options;
 
   const chunks = retrieveNumero(question, topK);
-  const answer = await answerNumeroQuestion(question, chunks, numeroContext, images);
+  const answer = await answerNumeroQuestion(
+    question,
+    chunks,
+    numeroContext,
+    images,
+    language,
+  );
 
   return {
     answer,
