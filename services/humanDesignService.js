@@ -944,6 +944,9 @@ const summarizeHumanDesignChart = (chart) => {
   const definedCenters = Array.isArray(plain.centers)
     ? plain.centers.filter((c) => c.defined).map((c) => c.displayName || `${c.name} Center`)
     : [];
+  const undefinedCenters = Array.isArray(plain.centers)
+    ? plain.centers.filter((c) => !c.defined).map((c) => c.displayName || `${c.name} Center`)
+    : [];
   return {
     type: plain.type,
     typeLabel: plain.typeLabel || plain.about?.yourType?.label || plain.type,
@@ -957,9 +960,15 @@ const summarizeHumanDesignChart = (chart) => {
     environment: plain.environment?.name ? plain.environment : plain.about?.environment || null,
     incarnationCross: plain.incarnationCross || plain.about?.incarnationCross || null,
     definedCenters,
-    undefinedCenterCount: 9 - definedCenters.length,
+    undefinedCenters,
+    undefinedCenterCount: undefinedCenters.length,
     definedChannels: Array.isArray(plain.channels)
-      ? plain.channels.map((ch) => ({ id: ch.id, title: ch.title || `Channel ${ch.id}`, name: ch.name }))
+      ? plain.channels.map((ch) => ({
+          id: ch.id,
+          title: ch.title || `Channel ${ch.id}`,
+          name: ch.name,
+          description: ch.description || "",
+        }))
       : [],
     activeGateCount: Array.isArray(plain.gates) ? plain.gates.length : 0,
     loveForType: plain.love?.type ? { title: plain.love.title || "Love for Type", type: plain.love.type, headline: plain.love.headline } : null,

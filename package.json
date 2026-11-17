@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node server.js",
-    "create-admin": "node scripts/createAdmin.js"
+    "create-admin": "node scripts/createAdmin.js",
+    "seed-vastu-rules": "node scripts/seedVastuRules.js"
   },
   "keywords": [],
   "author": "",

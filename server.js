@@ -117,6 +117,10 @@ app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/astrologer", require("./routes/astrologerDashboardRoutes"));
 app.use("/api/astro-qa", require("./routes/astroQARoutes"));
 app.use("/api/numerology", require("./routes/numerologyRoutes"));
+// The admin and astrologer consoles must be registered before the user routes
+// so /api/vastu/admin and /api/vastu/astrologer are not shadowed.
+app.use("/api/vastu/admin", require("./routes/vastuAdminRoutes"));
+app.use("/api/vastu/astrologer", require("./routes/vastuAstrologerRoutes"));
 app.use("/api/vastu", require("./routes/vastuRoutes"));
 app.use("/api/logo", require("./routes/logoRoutes"));
 app.use("/api/kundli", require("./routes/kundliRoutes"));

@@ -39,4 +39,35 @@ const uploadVastuMedia = multer({
   { name: "video", maxCount: 1 },
 ]);
 
-module.exports = { uploadVastuMedia };
+// The full request flow accepts a floor plan, up to six property photos, and
+// an optional walkthrough video. Files stay in memory only until the controller
+// stores them through services/vastuMediaService.js.
+const uploadVastuRequestMedia = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 30 * 1024 * 1024,
+    files: 8,
+  },
+  fileFilter: (req, file, callback) => {
+    if (file.fieldname === "floorPlan" && IMAGE_TYPES.has(file.mimetype)) {
+      return callback(null, true);
+    }
+    if (file.fieldname === "photos" && IMAGE_TYPES.has(file.mimetype)) {
+      return callback(null, true);
+    }
+    if (file.fieldname === "video" && VIDEO_TYPES.has(file.mimetype)) {
+      return callback(null, true);
+    }
+    callback(
+      new Error(
+        "Only floor plan/photo images (JPG, PNG, WebP or HEIC) and an MP4, MOV or WebM video are allowed.",
+      ),
+    );
+  },
+}).fields([
+  { name: "floorPlan", maxCount: 1 },
+  { name: "photos", maxCount: 6 },
+  { name: "video", maxCount: 1 },
+]);
+
+module.exports = { uploadVastuMedia, uploadVastuRequestMedia };

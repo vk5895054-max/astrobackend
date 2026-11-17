@@ -1,4 +1,4 @@
-const { CHANNELS_META } = require("./humanDesignService");
+const { CENTERS_META, CHANNELS_META, GATES_META } = require("./humanDesignService");
 
 const asPlainChart = (chart) =>
   chart && typeof chart.toObject === "function" ? chart.toObject() : chart;
@@ -26,6 +26,17 @@ const getDefinedCenters = (chart) =>
   );
 
 const normalize = (value) => String(value || "").trim().toLowerCase();
+const normalizeCenterName = (value) =>
+  normalize(value).replace(/\s+center$/, "");
+
+const getCenterMetadata = (name) => {
+  const normalizedName = normalizeCenterName(name);
+  return CENTERS_META.find(
+    (center) =>
+      normalizeCenterName(center.name) === normalizedName ||
+      normalizeCenterName(center.displayName) === normalizedName,
+  );
+};
 
 const ratingFor = (score) => ({
   score,
@@ -68,13 +79,41 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
     .sort();
   const sharedCenters = [...centersA].filter((center) => centersB.has(center)).sort();
   const sharedGates = [...gatesA].filter((gate) => gatesB.has(gate)).sort((a, b) => a - b);
+  const sharedCenterDetails = sharedCenters.map((name) => {
+    const metadata = getCenterMetadata(name);
+    return {
+      name: metadata?.displayName || name,
+      description: metadata?.definedDescription || "",
+      keywords: metadata?.keywords || [],
+    };
+  });
+  const sharedChannelDetails = sharedChannels.map((id) => {
+    const metadata = CHANNELS_META.find((channel) => channel.id === id);
+    return {
+      id,
+      name: metadata?.name || `Channel ${id}`,
+      description: metadata?.description || "",
+    };
+  });
+  const sharedGateDetails = sharedGates.map((number) => ({
+    number,
+    name: GATES_META[number]?.name || `Gate ${number}`,
+    keynote: GATES_META[number]?.keynote || "",
+    description: GATES_META[number]?.description || "",
+  }));
   const dissonantCenters = [...new Set([...centersA, ...centersB])]
     .filter((center) => centersA.has(center) !== centersB.has(center))
     .sort()
-    .map((name) => ({
-      name,
-      definedBy: centersA.has(name) ? "personA" : "personB",
-    }));
+    .map((name) => {
+      const metadata = getCenterMetadata(name);
+      return {
+        name: metadata?.displayName || name,
+        definedBy: centersA.has(name) ? "personA" : "personB",
+        description: metadata?.definedDescription || "",
+        openDescription: metadata?.undefinedDescription || "",
+        keywords: metadata?.keywords || [],
+      };
+    });
   const compromiseChannels = [];
   const dominantChannels = [];
   for (const channel of CHANNELS_META) {
@@ -86,7 +125,12 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
     const otherGates = hasChannelA ? gatesB : gatesA;
     const definedBy = hasChannelA ? "personA" : "personB";
     const partnerGate = [gateA, gateB].find((gate) => otherGates.has(gate));
-    const interaction = { id: channel.id, name: channel.name, definedBy };
+    const interaction = {
+      id: channel.id,
+      name: channel.name,
+      definedBy,
+      description: channel.description || "",
+    };
 
     if (partnerGate !== undefined) {
       compromiseChannels.push({ ...interaction, partnerGate });
@@ -105,6 +149,7 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
   }).map((channel) => ({
       id: channel.id,
       name: channel.name,
+      description: channel.description || "",
     }));
 
   const details = [];
@@ -159,8 +204,11 @@ const calculateHumanDesignCompatibility = (rawChartA, rawChartB) => {
     summary,
     details,
     sharedCenters,
+    sharedCenterDetails,
     sharedChannels,
+    sharedChannelDetails,
     sharedGates,
+    sharedGateDetails,
     resonantCenters: sharedCenters,
     dissonantCenters,
     compromiseChannels,

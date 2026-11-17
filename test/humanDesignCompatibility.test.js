@@ -63,6 +63,8 @@ test("complementary active gates are reported as an electromagnetic channel", ()
   assert.deepEqual(report.electromagneticChannels[0], {
     id: "1-8",
     name: "Channel of Inspiration",
+    description:
+      "Expresses unique creative identity effortlessly into the world by example.",
   });
   assert.match(report.summary, /complete 1 channel connection/);
 });
@@ -83,7 +85,11 @@ test("shared channels and centers are included without duplicate completion clai
 
   assert.deepEqual(report.sharedChannels, ["1-8"]);
   assert.deepEqual(report.sharedCenters, ["G"]);
+  assert.equal(report.sharedCenterDetails[0].name, "G Center");
+  assert.match(report.sharedCenterDetails[0].description, /internal compass/);
   assert.deepEqual(report.sharedGates, [1, 8]);
+  assert.equal(report.sharedGateDetails[0].number, 1);
+  assert.match(report.sharedGateDetails[0].description, /unique creative fuel/);
   assert.deepEqual(report.electromagneticChannels, []);
 });
 
@@ -112,6 +118,8 @@ test("classifies compromise, dominant, resonant, and dissonant dynamics", () => 
       name: "Channel of Intimacy",
       definedBy: "personA",
       partnerGate: 6,
+      description:
+        "Deep aura-level bonding uniting emotional discernment and passionate closeness.",
     },
   ]);
   assert.deepEqual(report.dominantChannels, [
@@ -119,13 +127,20 @@ test("classifies compromise, dominant, resonant, and dissonant dynamics", () => 
       id: "1-8",
       name: "Channel of Inspiration",
       definedBy: "personA",
+      description:
+        "Expresses unique creative identity effortlessly into the world by example.",
     },
   ]);
   assert.deepEqual(report.resonantCenters, ["G"]);
-  assert.deepEqual(report.dissonantCenters, [
-    { name: "Sacral", definedBy: "personB" },
-    { name: "Throat", definedBy: "personA" },
-  ]);
+  assert.deepEqual(
+    report.dissonantCenters.map(({ name, definedBy }) => ({ name, definedBy })),
+    [
+      { name: "Sacral Center", definedBy: "personB" },
+      { name: "Throat Center", definedBy: "personA" },
+    ],
+  );
+  assert.ok(report.dissonantCenters.every((center) => center.description));
+  assert.ok(report.dissonantCenters.every((center) => center.openDescription));
 });
 
 test("missing bodygraph data leaves the existing compatibility report unchanged", () => {
