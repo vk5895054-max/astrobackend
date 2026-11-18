@@ -1,0 +1,52 @@
+const express = require("express");
+const { protect } = require("../middlewares/authMiddleware");
+const { uploadReadingImages } = require("../middlewares/readingUpload");
+const {
+  faceReadingController,
+  palmReadingController,
+  getAnyReport,
+  downloadAnyReportPdf,
+  deleteAnyReport,
+} = require("../controllers/readingController");
+
+const createReadingRoutes = (controller) => {
+  const router = express.Router();
+  router.use(protect);
+
+  // Static paths first so they are never shadowed by /reports/:id.
+  router.get("/billing", controller.billing);
+  router.post("/analyze", uploadReadingImages, controller.analyze);
+  router.get("/reports", controller.listReports);
+  router.get("/reports/:id/pdf", controller.downloadPdf);
+  router.get("/reports/:id", controller.getReport);
+  router.delete("/reports/:id", controller.deleteReport);
+
+  return router;
+};
+
+// The Flutter app uses one shared screen for both features and sends `type`.
+// This router keeps that contract while reusing the same controllers below.
+const pickController = (value) =>
+  value === "palm" ? palmReadingController : faceReadingController;
+
+const facePalmRouter = express.Router();
+facePalmRouter.use(protect);
+facePalmRouter.get("/billing", (req, res, next) =>
+  pickController(req.query.type).billing(req, res, next)
+);
+facePalmRouter.post("/analyze", uploadReadingImages, (req, res, next) =>
+  pickController(req.body?.type).analyze(req, res, next)
+);
+facePalmRouter.get("/history", (req, res, next) =>
+  pickController(req.query.type).listReports(req, res, next)
+);
+facePalmRouter.get("/:id/report.pdf", downloadAnyReportPdf);
+facePalmRouter.get("/:id", getAnyReport);
+facePalmRouter.delete("/:id", deleteAnyReport);
+
+module.exports = {
+  createReadingRoutes,
+  faceReadingRoutes: createReadingRoutes(faceReadingController),
+  palmReadingRoutes: createReadingRoutes(palmReadingController),
+  facePalmRoutes: facePalmRouter,
+};

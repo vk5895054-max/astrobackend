@@ -388,4 +388,12 @@ const buildVastuReportPdf = ({ report, request } = {}) => {
   return serialize(buildObjects(pdf.finish()));
 };
 
-module.exports = { buildVastuReportPdf, wrapText, sanitize };
+module.exports = {
+  buildVastuReportPdf,
+  wrapText,
+  sanitize,
+  // Shared primitives for other dependency-free report PDFs (face/palm).
+  PdfBuilder,
+  buildObjects,
+  serialize,
+};

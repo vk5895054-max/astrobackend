@@ -117,6 +117,16 @@ app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/astrologer", require("./routes/astrologerDashboardRoutes"));
 app.use("/api/astro-qa", require("./routes/astroQARoutes"));
 app.use("/api/numerology", require("./routes/numerologyRoutes"));
+// Face & Palm reading: admin prefixes must be registered before the user
+// routers so /api/*/admin is not shadowed by /reports/:id.
+const readingAdminRoutes = require("./routes/readingAdminRoutes");
+const readingRoutes = require("./routes/readingRoutes");
+// Shared app-facing router (the client sends `type` in the request body).
+app.use("/api/face-palm", readingRoutes.facePalmRoutes);
+app.use("/api/face-reading/admin", readingAdminRoutes.faceReadingAdminRoutes);
+app.use("/api/face-reading", readingRoutes.faceReadingRoutes);
+app.use("/api/palm-reading/admin", readingAdminRoutes.palmReadingAdminRoutes);
+app.use("/api/palm-reading", readingRoutes.palmReadingRoutes);
 // The admin and astrologer consoles must be registered before the user routes
 // so /api/vastu/admin and /api/vastu/astrologer are not shadowed.
 app.use("/api/vastu/admin", require("./routes/vastuAdminRoutes"));

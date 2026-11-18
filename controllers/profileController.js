@@ -6,6 +6,9 @@ const Questionnaire = require("../models/questionnaire");
 const Horoscope = require("../models/horoscope");
 const AstroConversation = require("../models/astroConversation");
 const DeviceToken = require("../models/deviceToken");
+const ReadingReport = require("../models/readingReport");
+const ReadingFreeUsage = require("../models/readingFreeUsage");
+const { deleteReadingMedia } = require("../services/readingMediaService");
 const { uploadProfilePhoto: uploadProfilePhotoToCloudinary, deleteMedia, extractPublicIdFromUrl } = require("../config/cloudinary");
 
 const MAX_PHOTOS = 6;
@@ -160,6 +163,14 @@ const deleteProfile = async (req, res, next) => {
       }
     }
 
+    // Face/palm photos must not outlive the account (privacy requirement).
+    const readingReports = await ReadingReport.find({ user: userId }).lean();
+    for (const report of readingReports) {
+      for (const image of report.images || []) {
+        await deleteReadingMedia(image).catch(() => false);
+      }
+    }
+
     await Promise.all([
       Profile.deleteMany({ user: userId }),
       Questionnaire.deleteMany({ user: userId }),
@@ -168,6 +179,8 @@ const deleteProfile = async (req, res, next) => {
       DeviceToken.deleteMany({ user: userId }),
       Message.deleteMany({ sender: userId }),
       Match.deleteMany({ $or: [{ userA: userId }, { userB: userId }] }),
+      ReadingReport.deleteMany({ user: userId }),
+      ReadingFreeUsage.deleteMany({ user: userId }),
     ]);
 
     await User.findByIdAndDelete(userId);

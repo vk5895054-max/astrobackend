@@ -60,6 +60,18 @@ const HINDI_MESSAGES = {
   "Logo review ready": "लोगो की समीक्षा तैयार है",
   "Logo reviews retrieved": "लोगो की समीक्षाएँ प्राप्त हुईं",
   "Vastu report generated": "वास्तु रिपोर्ट तैयार हुई",
+  "Face Reading report ready": "चेहरा पढ़ने की रिपोर्ट तैयार है",
+  "Palm Reading report ready": "हाथ पढ़ने की रिपोर्ट तैयार है",
+  "Face Reading report and photos deleted":
+    "चेहरा पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
+  "Palm Reading report and photos deleted":
+    "हाथ पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
+  "Please give consent before processing your photo.":
+    "आपकी फ़ोटो प्रोसेस करने से पहले कृपया सहमति दें।",
+  "Please upload at least one clear photo for face reading.":
+    "चेहरा पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
+  "Please upload at least one clear photo for palm reading.":
+    "हाथ पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
   "Numerology profile saved": "अंक-ज्योतिष प्रोफ़ाइल सहेजी गई",
   "Numerology profile retrieved": "अंक-ज्योतिष प्रोफ़ाइल प्राप्त हुई",
   "Answer generated": "जवाब तैयार हुआ",

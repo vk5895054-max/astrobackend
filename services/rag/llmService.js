@@ -197,7 +197,7 @@ const cleanAnswer = (text) =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-const buildPrompt = (question, chunks, chartContext) => {
+const buildPrompt = (question, chunks, chartContext, category = "general") => {
   const excerptsText = chunks.length
     ? chunks
         .map((chunk) => `[Rule ${chunk.id} — ${chunk.title}]\n${chunk.text}`)
@@ -208,7 +208,12 @@ const buildPrompt = (question, chunks, chartContext) => {
     ? `\n\nChart data:\n${JSON.stringify(chartContext, null, 2)}`
     : "";
 
-  return `Question: ${question}\n\nKnowledge base excerpts:\n${excerptsText}${chartText}`;
+  const focusText =
+    category && category !== "general"
+      ? `\n\nFocus area: ${category}. Prioritise chart factors and knowledge-base material relevant to this area of life, and keep the answer centred on it.`
+      : "";
+
+  return `Question: ${question}${focusText}\n\nKnowledge base excerpts:\n${excerptsText}${chartText}`;
 };
 
 function formatError(error) {
@@ -467,8 +472,9 @@ const answerQuestion = async (
   chartContext,
   images = [],
   language = "en-US",
+  category = "general",
 ) => {
-  const userMessage = buildPrompt(question, chunks, chartContext);
+  const userMessage = buildPrompt(question, chunks, chartContext, category);
   const systemPrompt = withResponseLanguage(SYSTEM_PROMPT, language);
   const providerErrors = [];
   const eligibleProviders = images.length

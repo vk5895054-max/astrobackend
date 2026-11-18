@@ -56,16 +56,22 @@ const dashaSummary = (horoscope, at = new Date()) => {
 
 /**
  * POST /api/astro-qa/ask
- * body: { question: string, partnerId?: string }
+ * body: { question: string, partnerId?: string, category?: string }
  *
  * If partnerId is provided, grounds the answer in the compatibility
  * between the logged-in user and that partner (both must have a
  * Horoscope on file). Otherwise answers as a general knowledge-base
  * question (no personal chart data attached).
  */
+// One-tap topics shown by the app. Anything else is treated as "general".
+const SUPPORTED_QA_CATEGORIES = new Set(["marriage", "career", "finance"]);
+
 const ask = async (req, res, next) => {
   try {
     const { question, partnerId } = req.body;
+    const category = SUPPORTED_QA_CATEGORIES.has(req.body?.category)
+      ? req.body.category
+      : "general";
     if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ success: false, message: "question is required" });
     }
@@ -125,11 +131,13 @@ const ask = async (req, res, next) => {
       chartContext,
       images: flattenUploadedImages(req.files),
       language: req.language,
+      category,
     });
     await AstroConversation.create({
       user: req.user._id,
       partner: partnerId || null,
       question: question.trim(),
+      category,
       answer: result.answer,
       sources: result.sources,
     });

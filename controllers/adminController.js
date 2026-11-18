@@ -11,6 +11,9 @@ const DeviceToken = require("../models/deviceToken");
 const AstrologerProfile = require("../models/astrologerProfile");
 const Wallet = require("../models/wallet");
 const WalletTransaction = require("../models/walletTransaction");
+const ReadingReport = require("../models/readingReport");
+const ReadingFreeUsage = require("../models/readingFreeUsage");
+const { deleteReadingMedia } = require("../services/readingMediaService");
 
 const adminLogin = async (req, res, next) => {
   try {
@@ -224,6 +227,13 @@ const deleteUser = async (req, res, next) => {
     const user = await User.findByIdAndDelete(req.params.userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
+    const readingReports = await ReadingReport.find({ user: req.params.userId }).lean();
+    for (const report of readingReports) {
+      for (const image of report.images || []) {
+        await deleteReadingMedia(image).catch(() => false);
+      }
+    }
+
     await Promise.all([
       Profile.deleteMany({ user: req.params.userId }),
       Questionnaire.deleteMany({ user: req.params.userId }),
@@ -235,6 +245,8 @@ const deleteUser = async (req, res, next) => {
       AstrologerProfile.deleteMany({ user: req.params.userId }),
       Wallet.deleteMany({ user: req.params.userId }),
       WalletTransaction.deleteMany({ user: req.params.userId }),
+      ReadingReport.deleteMany({ user: req.params.userId }),
+      ReadingFreeUsage.deleteMany({ user: req.params.userId }),
     ]);
     const FreeUsage = require("../models/freeUsage");
     const Review = require("../models/review");
