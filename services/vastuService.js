@@ -39,7 +39,7 @@ Return ONLY valid JSON with this exact shape:
     {
       "title": "Short name of the gap",
       "zone": "Room or area, e.g. Kitchen, Main entrance",
-      "direction": "North-east | South-west | Centre | Unknown",
+      "direction": "North | North-east | East | South-east | South | South-west | West | North-west | Centre | Unknown",
       "severity": "high | medium | low",
       "observation": "What was observed and why it is a Vastu concern.",
       "remedy": "One practical, simple remedy the user can do without demolition."
@@ -48,6 +48,8 @@ Return ONLY valid JSON with this exact shape:
   "quickRemedies": ["2-4 very short actions the user can start today."],
   "disclaimer": "One short sentence saying this is traditional guidance, not professional advice."
 }
+
+Use the direction enum exactly. When a room or zone already names its direction (for example "Master Bedroom (SE)" or "South Main Entrance"), put that same direction in the "direction" field — never write "Unknown" for it. Use "Unknown" only when the direction genuinely cannot be determined.
 
 Return 4 to 8 doshas when possible, ordered from most to least important. If the home looks well aligned, return fewer doshas and a higher score.`;
 
@@ -114,6 +116,50 @@ const verdictFor = (score) => {
   return "Significant doshas";
 };
 
+const DIRECTIONS = {
+  north: "North",
+  northeast: "North-east",
+  north_east: "North-east",
+  ne: "North-east",
+  east: "East",
+  southeast: "South-east",
+  south_east: "South-east",
+  se: "South-east",
+  south: "South",
+  southwest: "South-west",
+  south_west: "South-west",
+  sw: "South-west",
+  west: "West",
+  northwest: "North-west",
+  north_west: "North-west",
+  nw: "North-west",
+  centre: "Centre",
+  center: "Centre",
+  central: "Centre",
+  brahmasthan: "Centre",
+};
+
+// The model sometimes answers "Unknown" for a room whose zone already names
+// the direction. Normalize common spellings to the app's direction labels and
+// derive the direction from free text when possible.
+const normalizeDirection = (value) => {
+  const text = asString(value).toLocaleLowerCase().trim();
+  if (!text) return "Unknown";
+  const key = text.replace(/[^a-z]+/g, "_").replace(/^_+|_+$/g, "");
+  if (DIRECTIONS[key]) return DIRECTIONS[key];
+  if (/north/.test(text) && /east/.test(text)) return "North-east";
+  if (/south/.test(text) && /east/.test(text)) return "South-east";
+  if (/south/.test(text) && /west/.test(text)) return "South-west";
+  if (/north/.test(text) && /west/.test(text)) return "North-west";
+  if (/cent(?:re|ral)|brahmasthan/.test(text)) return "Centre";
+  for (const name of ["north", "east", "south", "west"]) {
+    if (new RegExp(`\\b${name}\\b`).test(text)) {
+      return name[0].toUpperCase() + name.slice(1);
+    }
+  }
+  return "Unknown";
+};
+
 const normalizeReport = (parsed, rawText) => {
   if (!parsed || typeof parsed !== "object") {
     const answer = asString(rawText);
@@ -155,12 +201,21 @@ const normalizeReport = (parsed, rawText) => {
         item.remedy || item.remedies || item.solution || item.upay,
       );
       if (!title && !observation) return null;
+      const zone = asString(
+        item.zone || item.area || item.room || item.location,
+      );
+      const reportedDirection = asString(
+        item.direction || item.side || item.facing || item.orientation,
+      );
+      // "Unknown" is not useful when the zone/title already names a direction.
+      const directionSource =
+        reportedDirection && !/^unknown$/i.test(reportedDirection)
+          ? reportedDirection
+          : `${zone} ${title}`;
       return {
         title: title || "Vastu observation",
-        zone: asString(item.zone || item.area || item.room || item.location),
-        direction: asString(
-          item.direction || item.side || item.facing || item.orientation,
-        ),
+        zone,
+        direction: normalizeDirection(directionSource),
         severity: normalizeSeverity(
           item.severity || item.priority || item.level,
         ),
@@ -369,4 +424,11 @@ Keep the JSON keys and constrained enum values (verdict, direction, severity) ex
   }
 };
 
-module.exports = { analyzeVastu };
+module.exports = {
+  analyzeVastu,
+  normalizeReport,
+  normalizeDirection,
+  buildPrompt,
+  SYSTEM_PROMPT,
+  DEFAULT_DISCLAIMER,
+};
