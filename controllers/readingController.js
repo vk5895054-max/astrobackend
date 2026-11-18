@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 const ReadingReport = require("../models/readingReport");
-const readingBilling = require("../services/readingBillingService");
 const {
   analyzeReading,
   validateReadingImage,
@@ -126,18 +125,26 @@ const serialize = (doc) => {
 
 const createReadingController = (feature) => {
   // GET /api/<feature>/billing
-  const billing = async (req, res, next) => {
-    try {
-      const status = await readingBilling.getStatus(req.user._id, feature);
-      return res.json({ success: true, data: status });
-    } catch (error) {
-      return next(error);
-    }
-  };
+  // Kept for older app builds; Face/Palm readings are free, so there is no
+  // quota or wallet balance to report any more.
+  const billing = async (req, res) =>
+    res.json({
+      success: true,
+      data: {
+        feature: feature === "palm" ? "palm" : "face",
+        freeUsed: 0,
+        freeLimit: 0,
+        freeRemaining: 0,
+        walletBalance: 0,
+        basicPrice: 0,
+        detailedPrice: 0,
+        canUseFree: true,
+        isFree: true,
+      },
+    });
 
   // POST /api/<feature>/analyze  (multipart/form-data)
   const analyze = async (req, res, next) => {
-    let consumption = null;
     let storedImages = [];
     try {
       const files = flattenReadingImages(req.files);
@@ -158,7 +165,7 @@ const createReadingController = (feature) => {
         });
       }
 
-      // Reject unusable photos before charging the user for an AI call.
+      // Reject unusable photos before spending an AI call.
       const checks = files.map((file) => validateReadingImage(file, req.language));
       const quality = checks.find((item) => !item.valid) || {
         valid: true,
@@ -172,22 +179,8 @@ const createReadingController = (feature) => {
         });
       }
 
+      // Tier only controls report depth now — there is no payment or quota.
       const tier = req.body?.tier === "detailed" ? "detailed" : "basic";
-      const gate = await readingBilling.ensureBillable(req.user._id, feature, tier);
-      if (!gate.ok) {
-        return res.status(402).json({
-          success: false,
-          message: getMessage("insufficientBalance", req.language),
-          code: "INSUFFICIENT_BALANCE",
-          data: {
-            freeRemaining: gate.freeRemaining,
-            walletBalance: gate.walletBalance,
-            price: gate.price,
-          },
-        });
-      }
-
-      consumption = await readingBilling.consume(req.user._id, feature, tier, gate);
 
       const result = await analyzeReading({
         feature,
@@ -214,13 +207,7 @@ const createReadingController = (feature) => {
           acceptedAt: new Date(),
           version: cleanField(req.body?.consentVersion, 20) || "1.0",
         },
-        billing: {
-          isFree: consumption.isFree,
-          charged: consumption.charged,
-          price: gate.price || 0,
-          freeRemaining: consumption.freeRemaining,
-          walletBalance: consumption.walletBalance,
-        },
+        billing: { isFree: true, charged: 0, price: 0 },
       });
 
       return res.status(201).json({
@@ -235,9 +222,6 @@ const createReadingController = (feature) => {
       await Promise.all(
         storedImages.map((image) => deleteReadingMedia(image).catch(() => false))
       );
-      if (consumption) {
-        await readingBilling.refund(req.user._id, feature, consumption).catch(() => null);
-      }
       return next(error);
     }
   };
