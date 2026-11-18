@@ -2,6 +2,11 @@
 // Reuses the PDF primitives from the Vastu report writer.
 
 const { PdfBuilder, buildObjects, serialize } = require("./vastuReportPdf");
+const {
+  getAreaLabel,
+  findAreaId,
+  normalizeLocale,
+} = require("./readingLocalizationService");
 
 const plain = (value) =>
   value && typeof value.toObject === "function" ? value.toObject() : value;
@@ -29,7 +34,18 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   if (!doc) throw new Error("A reading report is required to build a PDF");
 
   const entry = plain(reading) || {};
-  const feature = entry.feature === "palm" ? "PALM" : "FACE";
+  const featureKey = entry.feature === "palm" ? "palm" : "face";
+  const feature = featureKey === "palm" ? "PALM" : "FACE";
+  // The built-in PDF font is Latin-1 only: Devanagari labels would be rendered
+  // as "?". Keep the structural labels in English for Hindi PDFs while using
+  // the Latin-script Hinglish labels for en-IN. The JSON report always keeps
+  // the fully localized labels.
+  const pdfLanguage =
+    normalizeLocale(entry.language) === "hi-IN"
+      ? "en-US"
+      : normalizeLocale(entry.language);
+  const areaLabel = (id, fallback) =>
+    getAreaLabel(featureKey, id, pdfLanguage) || fallback || titleCase(id);
   const pdf = new PdfBuilder();
 
   pdf.text(`${feature} READING REPORT`, { size: 20, bold: true, gap: 2 });
@@ -64,7 +80,8 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
     pdf.heading("Feature-wise interpretation");
     features.forEach((item, index) => {
       const point = plain(item) || {};
-      pdf.text(`${index + 1}. ${point.title || "Observation"}`, {
+      const id = point.key || findAreaId(featureKey, point.title);
+      pdf.text(`${index + 1}. ${areaLabel(id, point.title || "Observation")}`, {
         size: 10.5,
         bold: true,
         gap: 1,
@@ -82,7 +99,7 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
     pdf.heading("Detailed observations");
     for (const [key, value] of detailedEntries) {
       const item = plain(value) || {};
-      pdf.text(titleCase(key), { size: 10, bold: true, gap: 1 });
+      pdf.text(areaLabel(key), { size: 10, bold: true, gap: 1 });
       if (item.observation) pdf.text(`Observed: ${item.observation}`, { size: 9.5, gap: 1 });
       if (item.interpretation) pdf.text(`Interpretation: ${item.interpretation}`, { size: 9.5, gap: 3 });
     }

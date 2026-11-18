@@ -73,6 +73,29 @@ test("normalizeReport tolerates malformed or string-shaped model output", () => 
   assert.equal(report.rawText, "raw model text");
 });
 
+test("normalizeReport never leaks face areas into a palm report", () => {
+  const report = normalizeReport(
+    {
+      summary: "Palm lines are visible.",
+      features: [{ title: "Forehead", detail: "Broad and smooth" }],
+      detailed: {
+        heartLine: { observation: "Long", interpretation: "Empathetic" },
+        lifeLine: { observation: "Curved", interpretation: "Resilient" },
+      },
+    },
+    "",
+    "palm",
+    "basic"
+  );
+
+  assert.deepEqual(
+    report.features.map((item) => item.title),
+    ["Heart line", "Life line"]
+  );
+  assert.equal(report.detailed.heartLine.label, "Heart line");
+  assert.equal(report.detailed.lifeLine.label, "Life line");
+});
+
 test("normalizeReport falls back to detailed notes when features are missing", () => {
   const report = normalizeReport(
     {

@@ -1,0 +1,224 @@
+// Locale-aware labels and boilerplate for Face Reading / Palm Reading reports.
+//
+// The AI narrative is translated by `withResponseLanguage`, but the structural
+// labels (forehead, heart line, ...), the disclaimer and the "Keep in mind:"
+// prefix are generated on the server. Keeping them here means changing the app
+// language changes the whole report, not just the model's prose.
+
+const FACE_AREA_ORDER = [
+  "forehead",
+  "eyes",
+  "nose",
+  "lips",
+  "chin",
+  "faceShape",
+];
+
+const PALM_AREA_ORDER = [
+  "heartLine",
+  "headLine",
+  "lifeLine",
+  "fateLine",
+  "mountsAndTexture",
+];
+
+const FACE_AREAS = {
+  "en-US": {
+    forehead: "Forehead",
+    eyes: "Eyes",
+    nose: "Nose",
+    lips: "Lips",
+    chin: "Chin",
+    faceShape: "Face shape",
+  },
+  "hi-IN": {
+    forehead: "माथा",
+    eyes: "आँखें",
+    nose: "नाक",
+    lips: "होंठ",
+    chin: "ठोड़ी",
+    faceShape: "चेहरे का आकार",
+  },
+  "en-IN": {
+    forehead: "Forehead",
+    eyes: "Aankhen",
+    nose: "Naak",
+    lips: "Honth",
+    chin: "Chin",
+    faceShape: "Face shape",
+  },
+};
+
+const PALM_AREAS = {
+  "en-US": {
+    heartLine: "Heart line",
+    headLine: "Head line",
+    lifeLine: "Life line",
+    fateLine: "Fate line",
+    mountsAndTexture: "Mounts and texture",
+  },
+  "hi-IN": {
+    heartLine: "हृदय रेखा",
+    headLine: "बुद्धि रेखा",
+    lifeLine: "जीवन रेखा",
+    fateLine: "भाग्य रेखा",
+    mountsAndTexture: "ग्रंथियाँ और बनावट",
+  },
+  "en-IN": {
+    heartLine: "Heart line",
+    headLine: "Head line",
+    lifeLine: "Life line",
+    fateLine: "Fate line",
+    mountsAndTexture: "Mounts and texture",
+  },
+};
+
+const DISCLAIMERS = {
+  "en-US":
+    "This is a traditional, entertainment-focused interpretation based only on visible features in the submitted photo. It is not a medical, psychological, legal or financial assessment and does not guarantee any outcome.",
+  "hi-IN":
+    "यह पारंपरिक, मनोरंजन-केंद्रित व्याख्या है जो केवल आपकी फ़ोटो में दिखने वाले लक्षणों पर आधारित है। यह चिकित्सा, मनोवैज्ञानिक, कानूनी या वित्तीय मूल्यांकन नहीं है और किसी भी परिणाम की गारंटी नहीं देती।",
+  "en-IN":
+    "Yeh ek traditional, entertainment-focused interpretation hai jo sirf aapki photo me dikhte hue features par aadharit hai. Yeh medical, psychological, legal ya financial assessment nahi hai aur kisi bhi result ki guarantee nahi deta.",
+};
+
+const CAUTION_PREFIX = {
+  "en-US": "Keep in mind: ",
+  "hi-IN": "ध्यान दें: ",
+  "en-IN": "Dhyan dein: ",
+};
+
+const FEATURE_LABELS = {
+  "en-US": { face: "Face Reading", palm: "Palm Reading" },
+  "hi-IN": { face: "चेहरा पढ़ना", palm: "हाथ पढ़ना" },
+  "en-IN": { face: "Face reading", palm: "Palm reading" },
+};
+
+// User-facing messages owned by the Face/Palm feature. The generic API
+// localization layer handles Hindi for shared responses, but these need
+// locale-aware text in the controller itself (notably for en-IN Hinglish).
+const MESSAGES = {
+  "en-US": {
+    uploadRequiredFace: "Please upload at least one clear photo for face reading.",
+    uploadRequiredPalm: "Please upload at least one clear photo for palm reading.",
+    consentRequired: "Please give consent before processing your photo.",
+    emptyPhoto: "The uploaded photo is empty.",
+    unsupportedFormat: "Please upload a JPEG, PNG, WebP or HEIC photo.",
+    tooSmall: "The photo looks too small. Please upload a clearer image.",
+    insufficientBalance:
+      "Your free readings are finished. Please recharge your wallet to continue.",
+    unavailableFace:
+      "Face Reading is temporarily unavailable. Please try again in a moment.",
+    unavailablePalm:
+      "Palm Reading is temporarily unavailable. Please try again in a moment.",
+    reportReadyFace: "Face Reading report ready",
+    reportReadyPalm: "Palm Reading report ready",
+    deletedFace: "Face Reading report and photos deleted",
+    deletedPalm: "Palm Reading report and photos deleted",
+  },
+  "hi-IN": {
+    uploadRequiredFace: "चेहरा पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
+    uploadRequiredPalm: "हाथ पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
+    consentRequired: "आपकी फ़ोटो प्रोसेस करने से पहले कृपया सहमति दें।",
+    emptyPhoto: "अपलोड की गई फ़ोटो खाली है।",
+    unsupportedFormat: "कृपया JPEG, PNG, WebP या HEIC फ़ोटो अपलोड करें।",
+    tooSmall: "फ़ोटो बहुत छोटी लग रही है। कृपया एक स्पष्ट तस्वीर अपलोड करें।",
+    insufficientBalance:
+      "आपकी मुफ़्त रीडिंग्स खत्म हो गई हैं। जारी रखने के लिए कृपया अपना वॉलेट रिचार्ज करें।",
+    unavailableFace: "चेहरा पढ़ना अभी अस्थायी रूप से उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    unavailablePalm: "हाथ पढ़ना अभी अस्थायी रूप से उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    reportReadyFace: "चेहरा पढ़ने की रिपोर्ट तैयार है",
+    reportReadyPalm: "हाथ पढ़ने की रिपोर्ट तैयार है",
+    deletedFace: "चेहरा पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
+    deletedPalm: "हाथ पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
+  },
+  "en-IN": {
+    uploadRequiredFace: "Face reading ke liye kripya kam se kam ek clear photo upload karein.",
+    uploadRequiredPalm: "Palm reading ke liye kripya kam se kam ek clear photo upload karein.",
+    consentRequired: "Aapki photo process karne se pehle kripya consent dein.",
+    emptyPhoto: "Upload ki gayi photo khali hai.",
+    unsupportedFormat: "Kripya JPEG, PNG, WebP ya HEIC photo upload karein.",
+    tooSmall: "Photo bahut chhoti lag rahi hai. Kripya ek clear image upload karein.",
+    insufficientBalance:
+      "Aapki free readings khatam ho gayi hain. Jaari rakhne ke liye kripya wallet recharge karein.",
+    unavailableFace: "Face reading abhi temporarily available nahi hai. Kripya thodi der baad try karein.",
+    unavailablePalm: "Palm reading abhi temporarily available nahi hai. Kripya thodi der baad try karein.",
+    reportReadyFace: "Face reading report taiyar hai",
+    reportReadyPalm: "Palm reading report taiyar hai",
+    deletedFace: "Face reading report aur photos delete ho gayi",
+    deletedPalm: "Palm reading report aur photos delete ho gayi",
+  },
+};
+
+const normalizeLocale = (language) => {
+  const value = String(language || "")
+    .trim()
+    .replaceAll("_", "-")
+    .toLowerCase();
+  if (value === "hi" || value.startsWith("hi-")) return "hi-IN";
+  if (value === "en-in" || value.startsWith("en-in-")) return "en-IN";
+  return "en-US";
+};
+
+const normalizeLabel = (value) =>
+  String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLocaleLowerCase()
+    // Keep Unicode letters so Devanagari labels can be matched too.
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+
+const areaMaps = (feature) =>
+  feature === "palm" ? PALM_AREAS : FACE_AREAS;
+
+const areaOrder = (feature) =>
+  feature === "palm" ? PALM_AREA_ORDER : FACE_AREA_ORDER;
+
+// [id, label] pairs in a stable order for the requested locale.
+const getAreas = (feature, language) => {
+  const map = areaMaps(feature)[normalizeLocale(language)];
+  return areaOrder(feature).map((id) => [id, map[id]]);
+};
+
+const getAreaLabel = (feature, id, language) =>
+  areaMaps(feature)[normalizeLocale(language)][id] || String(id || "");
+
+// Find the stable area id for any label the AI may have returned, in any of
+// the supported locales. Returns null for free-form observations.
+const findAreaId = (feature, label) => {
+  const normalized = normalizeLabel(label);
+  if (!normalized) return null;
+  for (const id of areaOrder(feature)) {
+    if (normalizeLabel(id) === normalized) return id;
+    for (const map of Object.values(areaMaps(feature))) {
+      if (normalizeLabel(map[id]) === normalized) return id;
+    }
+  }
+  return null;
+};
+
+const getDisclaimer = (language) => DISCLAIMERS[normalizeLocale(language)];
+
+const getCautionPrefix = (language) =>
+  CAUTION_PREFIX[normalizeLocale(language)];
+
+const getFeatureLabel = (feature, language) =>
+  FEATURE_LABELS[normalizeLocale(language)][
+    feature === "palm" ? "palm" : "face"
+  ];
+
+const getMessage = (key, language) => {
+  const locale = normalizeLocale(language);
+  return MESSAGES[locale][key] || MESSAGES["en-US"][key] || key;
+};
+
+module.exports = {
+  normalizeLocale,
+  getAreas,
+  getAreaLabel,
+  findAreaId,
+  getDisclaimer,
+  getCautionPrefix,
+  getFeatureLabel,
+  getMessage,
+};

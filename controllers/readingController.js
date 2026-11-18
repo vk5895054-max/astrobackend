@@ -11,6 +11,10 @@ const {
 } = require("../services/readingMediaService");
 const { buildReadingReportPdf } = require("../services/readingReportPdf");
 const { flattenReadingImages } = require("../middlewares/readingUpload");
+const {
+  getCautionPrefix,
+  getMessage,
+} = require("../services/readingLocalizationService");
 
 const cleanField = (value, maxLength) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -53,13 +57,17 @@ const serialize = (doc) => {
   const value = typeof doc.toObject === "function" ? doc.toObject() : doc;
   const report = value.report || {};
   const detailed = report.detailed || {};
+  const language = value.language || (report.language ?? "en-US");
+  const cautionPrefix = getCautionPrefix(language);
 
   const features = (Array.isArray(report.features) ? report.features : []).map(
     (item) => {
       const point = item && typeof item.toObject === "function" ? item.toObject() : item || {};
       const label = point.title || point.label || point.key || "Observation";
       return {
-        key: slug(label),
+        // Stable area id when available: Devanagari labels would slug to an
+        // empty string otherwise.
+        key: point.key ? slug(point.key) : slug(label),
         label,
         observation: point.observation || "",
         interpretation: point.interpretation || point.detail || "",
@@ -73,7 +81,7 @@ const serialize = (doc) => {
       const item = entry && typeof entry.toObject === "function" ? entry.toObject() : entry || {};
       return {
         key: slug(key),
-        label: titleCase(key),
+        label: item.label || titleCase(key),
         value: item.observation || "",
         detail: item.interpretation || "",
       };
@@ -110,15 +118,13 @@ const serialize = (doc) => {
     strengths: Array.isArray(report.strengths) ? report.strengths : [],
     suggestions: [
       ...(Array.isArray(report.suggestions) ? report.suggestions : []),
-      ...cautions.filter(Boolean).map((item) => `Keep in mind: ${item}`),
+      ...cautions.filter(Boolean).map((item) => `${cautionPrefix}${item}`),
     ],
     disclaimer: report.disclaimer || "",
   };
 };
 
 const createReadingController = (feature) => {
-  const name = feature === "palm" ? "Palm Reading" : "Face Reading";
-
   // GET /api/<feature>/billing
   const billing = async (req, res, next) => {
     try {
@@ -138,19 +144,22 @@ const createReadingController = (feature) => {
       if (!files.length) {
         return res.status(400).json({
           success: false,
-          message: `Please upload at least one clear photo for ${name.toLowerCase()}.`,
+          message: getMessage(
+            feature === "palm" ? "uploadRequiredPalm" : "uploadRequiredFace",
+            req.language
+          ),
         });
       }
       if (!hasConsent(req.body?.consent)) {
         return res.status(400).json({
           success: false,
-          message: "Please give consent before processing your photo.",
+          message: getMessage("consentRequired", req.language),
           code: "CONSENT_REQUIRED",
         });
       }
 
       // Reject unusable photos before charging the user for an AI call.
-      const checks = files.map(validateReadingImage);
+      const checks = files.map((file) => validateReadingImage(file, req.language));
       const quality = checks.find((item) => !item.valid) || {
         valid: true,
         message: "",
@@ -168,8 +177,7 @@ const createReadingController = (feature) => {
       if (!gate.ok) {
         return res.status(402).json({
           success: false,
-          message:
-            "Your free readings are finished. Please recharge your wallet to continue.",
+          message: getMessage("insufficientBalance", req.language),
           code: "INSUFFICIENT_BALANCE",
           data: {
             freeRemaining: gate.freeRemaining,
@@ -217,7 +225,10 @@ const createReadingController = (feature) => {
 
       return res.status(201).json({
         success: true,
-        message: `${name} report ready`,
+        message: getMessage(
+          feature === "palm" ? "reportReadyPalm" : "reportReadyFace",
+          req.language
+        ),
         data: { ...serialize(doc), billing: doc.billing },
       });
     } catch (error) {
@@ -294,7 +305,10 @@ const createReadingController = (feature) => {
       await ReadingReport.deleteOne({ _id: report._id });
       return res.json({
         success: true,
-        message: `${name} report and photos deleted`,
+        message: getMessage(
+          feature === "palm" ? "deletedPalm" : "deletedFace",
+          req.language
+        ),
       });
     } catch (error) {
       return next(error);
@@ -342,10 +356,10 @@ const deleteAnyReport = async (req, res, next) => {
     await ReadingReport.deleteOne({ _id: report._id });
     return res.json({
       success: true,
-      message:
-        report.feature === "palm"
-          ? "Palm Reading report and photos deleted"
-          : "Face Reading report and photos deleted",
+      message: getMessage(
+        report.feature === "palm" ? "deletedPalm" : "deletedFace",
+        req.language
+      ),
     });
   } catch (error) {
     return next(error);
