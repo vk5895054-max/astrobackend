@@ -10,6 +10,7 @@ const {
 } = require("../services/readingMediaService");
 const { buildReadingReportPdf } = require("../services/readingReportPdf");
 const { flattenReadingImages } = require("../middlewares/readingUpload");
+const { normalizeFocusText } = require("../services/focusOptions");
 const {
   getCautionPrefix,
   getMessage,
@@ -182,12 +183,18 @@ const createReadingController = (feature) => {
       // Tier only controls report depth now — there is no payment or quota.
       const tier = req.body?.tier === "detailed" ? "detailed" : "basic";
 
+      // The app sends a stable focus slug; expand it before it reaches the
+      // prompt and the stored report. Older free-text clients keep working.
+      const focusText =
+        normalizeFocusText(req.body?.notes, 1000) ||
+        normalizeFocusText(req.body?.focus, 300);
+
       const result = await analyzeReading({
         feature,
         images: files,
         tier,
-        notes: cleanField(req.body?.notes, 1000),
-        focus: cleanField(req.body?.focus, 300),
+        notes: focusText,
+        focus: "",
         language: req.language,
       });
 
@@ -198,8 +205,8 @@ const createReadingController = (feature) => {
         feature,
         tier,
         images: storedImages,
-        notes: cleanField(req.body?.notes, 1000),
-        focus: cleanField(req.body?.focus, 300),
+        notes: focusText,
+        focus: "",
         language: req.language || "en-US",
         report: result,
         quality,

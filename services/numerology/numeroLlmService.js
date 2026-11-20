@@ -28,10 +28,14 @@ const OPENROUTER_ENABLED = process.env.OPENROUTER_ENABLED === 'true';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.NUMERO_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || "nvidia/nemotron-3.5-lightning:free";
 const OPENROUTER_API_BASE = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.OPENROUTER_TIMEOUT_MS || process.env.NUMERO_OPENROUTER_TIMEOUT_MS) || 25000,
+);
 
 const MAX_ATTEMPTS = 3;
 const CF_MAX_ATTEMPTS = 2;
-const OR_MAX_ATTEMPTS = 2;
+const OR_MAX_ATTEMPTS = 1;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -74,7 +78,7 @@ const providers = [
     priority: 1,
     enabled: OPENROUTER_ENABLED && !!OPENROUTER_API_KEY,
     maxAttempts: OR_MAX_ATTEMPTS,
-    timeout: 180000,
+    timeout: OPENROUTER_TIMEOUT_MS,
     healthCheck: checkOpenRouterHealth,
   },
   {

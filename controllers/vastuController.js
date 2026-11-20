@@ -4,6 +4,7 @@ const VastuReport = require("../models/vastuReport");
 const { analyzeVastu } = require("../services/vastuService");
 const { persistVastuUploads } = require("../services/vastuMediaService");
 const { buildVastuReportPdf } = require("../services/vastuReportPdf");
+const { normalizeFocusText } = require("../services/focusOptions");
 const {
   buildError,
   extractPropertyInput,
@@ -66,7 +67,7 @@ const analyze = async (req, res, next) => {
     const report = await analyzeVastu({
       map,
       video,
-      notes: cleanField(req.body?.notes, 1000),
+      notes: normalizeFocusText(req.body?.notes, 1000),
       homeType: cleanField(req.body?.homeType, 80),
       facing: cleanField(req.body?.facing, 80),
       language: req.language,
@@ -119,7 +120,7 @@ const createRequest = async (req, res, next) => {
       address,
       media,
       birthDetails,
-      concern: cleanField(req.body?.concern, 3000),
+      concern: normalizeFocusText(req.body?.concern, 3000),
       language: cleanField(req.body?.language, 20) || "en",
       verification: {},
       statusHistory: [
@@ -275,6 +276,10 @@ const provideMoreInfo = async (req, res, next) => {
       request.birthDetails = extractBirthDetails({ birthDetails: { ...existingBirth, ...birthPatch } });
     }
 
+    // The app now sends a single-select concern slug in the follow-up too.
+    const concernText = normalizeFocusText(req.body?.concern, 3000);
+    if (concernText) request.concern = concernText;
+
     const media = await persistVastuUploads(req.files || {}, req.user._id);
     if (media.floorPlanUrl) {
       request.media.floorPlanUrl = media.floorPlanUrl;
@@ -298,6 +303,7 @@ const provideMoreInfo = async (req, res, next) => {
       ...(media.videoUrl ? ["video"] : []),
       ...(Object.keys(addressPatch).length || Object.keys(directAddressPatch).length ? ["address"] : []),
       ...(Object.keys(birthPatch).length ? ["birthDetails"] : []),
+      ...(concernText ? ["concern"] : []),
     ]);
 
     let resolved = 0;

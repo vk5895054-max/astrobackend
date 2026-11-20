@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
+const Questionnaire = require("../models/questionnaire");
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -44,6 +45,22 @@ const register = async (req, res) => {
       gender,
     });
 
+    let questionnaire = null;
+    const qInput = req.body.questionnaire || req.body;
+    if (qInput && typeof qInput === "object") {
+      const qData = Object.fromEntries(
+        Questionnaire.fields
+          .filter((field) => qInput[field] !== undefined && typeof qInput[field] === "string" && qInput[field].trim())
+          .map((field) => [field, qInput[field].trim()])
+      );
+      if (Object.keys(qData).length > 0) {
+        questionnaire = await Questionnaire.create({
+          user: user._id,
+          ...qData,
+        });
+      }
+    }
+
     const token = generateToken(user._id);
 
     res.cookie("token", token, {
@@ -60,6 +77,7 @@ const register = async (req, res) => {
       user: {
         ...user.toSafeObject(),
       },
+      questionnaire,
     });
   } catch (error) {
     console.error("Register Error:", error);

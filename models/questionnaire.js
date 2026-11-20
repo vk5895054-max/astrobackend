@@ -10,7 +10,7 @@ const fields = [
 
 const questionnaireSchema = new mongoose.Schema({
 	user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, unique: true },
-	...Object.fromEntries(fields.map((field) => [field, { type: String, required: true, trim: true }])),
+	...Object.fromEntries(fields.map((field) => [field, { type: String, required: false, trim: true, default: "" }])),
 }, { timestamps: true });
 
 questionnaireSchema.methods.isComplete = function isComplete() {
