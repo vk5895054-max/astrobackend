@@ -101,6 +101,7 @@ test("Graphology PDF is labeled and includes its disclaimer", () => {
   const text = pdf.toString("latin1");
   assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
   assert.match(text, /GRAPHOLOGY READING REPORT/);
+  assert.doesNotMatch(text, /Type: Basic/);
   assert.match(text, /Baseline/);
   assert.match(text, /Graphology is not scientifically validated/);
 });

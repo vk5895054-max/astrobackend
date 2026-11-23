@@ -1,4 +1,4 @@
-// Dependency-free PDF export for Face Reading / Palm Reading reports.
+// Dependency-free PDF export for Face Reading, Palm Reading and Graphology.
 // Reuses the PDF primitives from the Vastu report writer.
 
 const { PdfBuilder, buildObjects, serialize } = require("./vastuReportPdf");
@@ -63,7 +63,9 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   pdf.text(
     [
       `Report ID: ${String(entry._id || "")}`,
-      `Type: ${titleCase(entry.tier || "basic")}`,
+      ...(featureKey === "graphology"
+        ? []
+        : [`Type: ${titleCase(entry.tier || "basic")}`]),
       `Generated: ${formatDate(entry.createdAt)}`,
     ]
       .filter(Boolean)

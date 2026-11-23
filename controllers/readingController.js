@@ -184,8 +184,13 @@ const createReadingController = (feature) => {
         });
       }
 
-      // Tier only controls report depth now — there is no payment or quota.
-      const tier = req.body?.tier === "detailed" ? "detailed" : "basic";
+      // Graphology uses a single basic report; other readings may request detail.
+      const tier =
+        feature === "graphology"
+          ? "basic"
+          : req.body?.tier === "detailed"
+            ? "detailed"
+            : "basic";
 
       // The app sends a stable focus slug; expand it before it reaches the
       // prompt and the stored report. Older free-text clients keep working.
