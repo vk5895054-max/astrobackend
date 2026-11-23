@@ -4,6 +4,7 @@ const { uploadReadingImages } = require("../middlewares/readingUpload");
 const {
   faceReadingController,
   palmReadingController,
+  graphologyReadingController,
   getAnyReport,
   downloadAnyReportPdf,
   deleteAnyReport,
@@ -48,5 +49,6 @@ module.exports = {
   createReadingRoutes,
   faceReadingRoutes: createReadingRoutes(faceReadingController),
   palmReadingRoutes: createReadingRoutes(palmReadingController),
+  graphologyRoutes: createReadingRoutes(graphologyReadingController),
   facePalmRoutes: facePalmRouter,
 };

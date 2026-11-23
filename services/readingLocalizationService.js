@@ -22,6 +22,15 @@ const PALM_AREA_ORDER = [
   "mountsAndTexture",
 ];
 
+const GRAPHOLOGY_AREA_ORDER = [
+  "slant",
+  "letterSize",
+  "spacing",
+  "baseline",
+  "writingPressure",
+  "letterForms",
+];
+
 const FACE_AREAS = {
   "en-US": {
     forehead: "Forehead",
@@ -73,6 +82,33 @@ const PALM_AREAS = {
   },
 };
 
+const GRAPHOLOGY_AREAS = {
+  "en-US": {
+    slant: "Letter slant",
+    letterSize: "Letter size",
+    spacing: "Spacing",
+    baseline: "Baseline",
+    writingPressure: "Visible pen pressure",
+    letterForms: "Letter forms",
+  },
+  "hi-IN": {
+    slant: "अक्षरों का झुकाव",
+    letterSize: "अक्षरों का आकार",
+    spacing: "शब्दों और अक्षरों के बीच दूरी",
+    baseline: "लिखावट की आधार रेखा",
+    writingPressure: "पेन के दबाव के निशान",
+    letterForms: "अक्षरों की बनावट",
+  },
+  "en-IN": {
+    slant: "Letter slant",
+    letterSize: "Letter size",
+    spacing: "Spacing",
+    baseline: "Writing baseline",
+    writingPressure: "Visible pen pressure",
+    letterForms: "Letter forms",
+  },
+};
+
 const DISCLAIMERS = {
   "en-US":
     "This is a traditional, entertainment-focused interpretation based only on visible features in the submitted photo. It is not a medical, psychological, legal or financial assessment and does not guarantee any outcome.",
@@ -82,6 +118,15 @@ const DISCLAIMERS = {
     "Yeh ek traditional, entertainment-focused interpretation hai jo sirf aapki photo me dikhte hue features par aadharit hai. Yeh medical, psychological, legal ya financial assessment nahi hai aur kisi bhi result ki guarantee nahi deta.",
 };
 
+const GRAPHOLOGY_DISCLAIMERS = {
+  "en-US":
+    "This is an entertainment-focused interpretation based only on visible handwriting in the submitted photo. Graphology is not scientifically validated; this is not a medical, psychological, legal or financial assessment and does not guarantee any outcome.",
+  "hi-IN":
+    "यह मनोरंजन-केंद्रित व्याख्या आपकी फ़ोटो में दिखने वाली लिखावट पर आधारित है। ग्राफ़ोलॉजी वैज्ञानिक रूप से प्रमाणित नहीं है; यह चिकित्सा, मनोवैज्ञानिक, कानूनी या वित्तीय मूल्यांकन नहीं है और किसी परिणाम की गारंटी नहीं देती।",
+  "en-IN":
+    "Yeh entertainment-focused interpretation photo me dikhne wali handwriting par based hai. Graphology scientifically validated nahi hai; yeh medical, psychological, legal ya financial assessment nahi hai aur kisi result ki guarantee nahi deta.",
+};
+
 const CAUTION_PREFIX = {
   "en-US": "Keep in mind: ",
   "hi-IN": "ध्यान दें: ",
@@ -89,9 +134,21 @@ const CAUTION_PREFIX = {
 };
 
 const FEATURE_LABELS = {
-  "en-US": { face: "Face Reading", palm: "Palm Reading" },
-  "hi-IN": { face: "चेहरा पढ़ना", palm: "हाथ पढ़ना" },
-  "en-IN": { face: "Face reading", palm: "Palm reading" },
+  "en-US": {
+    face: "Face Reading",
+    palm: "Palm Reading",
+    graphology: "Graphology Reading",
+  },
+  "hi-IN": {
+    face: "चेहरा पढ़ना",
+    palm: "हाथ पढ़ना",
+    graphology: "हस्तलेखन विश्लेषण",
+  },
+  "en-IN": {
+    face: "Face reading",
+    palm: "Palm reading",
+    graphology: "Graphology reading",
+  },
 };
 
 // User-facing messages owned by the Face/Palm feature. The generic API
@@ -111,10 +168,16 @@ const MESSAGES = {
       "Face Reading is temporarily unavailable. Please try again in a moment.",
     unavailablePalm:
       "Palm Reading is temporarily unavailable. Please try again in a moment.",
+    uploadRequiredGraphology:
+      "Please upload a clear handwriting sample for graphology.",
+    unavailableGraphology:
+      "Graphology analysis is temporarily unavailable. Please try again in a moment.",
     reportReadyFace: "Face Reading report ready",
     reportReadyPalm: "Palm Reading report ready",
+    reportReadyGraphology: "Graphology report ready",
     deletedFace: "Face Reading report and photos deleted",
     deletedPalm: "Palm Reading report and photos deleted",
+    deletedGraphology: "Graphology report and photos deleted",
   },
   "hi-IN": {
     uploadRequiredFace: "चेहरा पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
@@ -127,10 +190,14 @@ const MESSAGES = {
       "आपकी मुफ़्त रीडिंग्स खत्म हो गई हैं। जारी रखने के लिए कृपया अपना वॉलेट रिचार्ज करें।",
     unavailableFace: "चेहरा पढ़ना अभी अस्थायी रूप से उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
     unavailablePalm: "हाथ पढ़ना अभी अस्थायी रूप से उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    uploadRequiredGraphology: "ग्राफ़ोलॉजी के लिए कृपया लिखावट का स्पष्ट नमूना अपलोड करें।",
+    unavailableGraphology: "हस्तलेखन विश्लेषण अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
     reportReadyFace: "चेहरा पढ़ने की रिपोर्ट तैयार है",
     reportReadyPalm: "हाथ पढ़ने की रिपोर्ट तैयार है",
+    reportReadyGraphology: "हस्तलेखन विश्लेषण की रिपोर्ट तैयार है",
     deletedFace: "चेहरा पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
     deletedPalm: "हाथ पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
+    deletedGraphology: "हस्तलेखन विश्लेषण की रिपोर्ट और फ़ोटो हटा दी गईं",
   },
   "en-IN": {
     uploadRequiredFace: "Face reading ke liye kripya kam se kam ek clear photo upload karein.",
@@ -143,10 +210,14 @@ const MESSAGES = {
       "Aapki free readings khatam ho gayi hain. Jaari rakhne ke liye kripya wallet recharge karein.",
     unavailableFace: "Face reading abhi temporarily available nahi hai. Kripya thodi der baad try karein.",
     unavailablePalm: "Palm reading abhi temporarily available nahi hai. Kripya thodi der baad try karein.",
+    uploadRequiredGraphology: "Graphology ke liye handwriting ka clear sample upload karein.",
+    unavailableGraphology: "Graphology analysis abhi temporarily available nahi hai. Kripya baad mein try karein.",
     reportReadyFace: "Face reading report taiyar hai",
     reportReadyPalm: "Palm reading report taiyar hai",
+    reportReadyGraphology: "Graphology report taiyar hai",
     deletedFace: "Face reading report aur photos delete ho gayi",
     deletedPalm: "Palm reading report aur photos delete ho gayi",
+    deletedGraphology: "Graphology report aur photos delete ho gayi",
   },
 };
 
@@ -169,10 +240,18 @@ const normalizeLabel = (value) =>
     .replace(/^_+|_+$/g, "");
 
 const areaMaps = (feature) =>
-  feature === "palm" ? PALM_AREAS : FACE_AREAS;
+  feature === "palm"
+    ? PALM_AREAS
+    : feature === "graphology"
+      ? GRAPHOLOGY_AREAS
+      : FACE_AREAS;
 
 const areaOrder = (feature) =>
-  feature === "palm" ? PALM_AREA_ORDER : FACE_AREA_ORDER;
+  feature === "palm"
+    ? PALM_AREA_ORDER
+    : feature === "graphology"
+      ? GRAPHOLOGY_AREA_ORDER
+      : FACE_AREA_ORDER;
 
 // [id, label] pairs in a stable order for the requested locale.
 const getAreas = (feature, language) => {
@@ -197,14 +276,19 @@ const findAreaId = (feature, label) => {
   return null;
 };
 
-const getDisclaimer = (language) => DISCLAIMERS[normalizeLocale(language)];
+const getDisclaimer = (language, feature) => {
+  const locale = normalizeLocale(language);
+  return feature === "graphology"
+    ? GRAPHOLOGY_DISCLAIMERS[locale]
+    : DISCLAIMERS[locale];
+};
 
 const getCautionPrefix = (language) =>
   CAUTION_PREFIX[normalizeLocale(language)];
 
 const getFeatureLabel = (feature, language) =>
   FEATURE_LABELS[normalizeLocale(language)][
-    feature === "palm" ? "palm" : "face"
+    feature === "palm" || feature === "graphology" ? feature : "face"
   ];
 
 const getMessage = (key, language) => {

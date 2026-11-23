@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const cors = require("cors");
+const compression = require("compression");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
@@ -41,6 +42,7 @@ const corsOrigin =
     : true;
 
 // Middleware
+app.use(compression());
 app.use(
   cors({
     origin: corsOrigin,
@@ -123,6 +125,7 @@ const readingAdminRoutes = require("./routes/readingAdminRoutes");
 const readingRoutes = require("./routes/readingRoutes");
 // Shared app-facing router (the client sends `type` in the request body).
 app.use("/api/face-palm", readingRoutes.facePalmRoutes);
+app.use("/api/graphology", readingRoutes.graphologyRoutes);
 app.use("/api/face-reading/admin", readingAdminRoutes.faceReadingAdminRoutes);
 app.use("/api/face-reading", readingRoutes.faceReadingRoutes);
 app.use("/api/palm-reading/admin", readingAdminRoutes.palmReadingAdminRoutes);

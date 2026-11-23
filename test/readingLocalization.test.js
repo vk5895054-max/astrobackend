@@ -12,6 +12,7 @@ const {
   findAreaId,
   getDisclaimer,
   getMessage,
+  getFeatureLabel,
   normalizeLocale,
 } = require("../services/readingLocalizationService");
 const {
@@ -50,6 +51,22 @@ test("face and palm labels change with the app language", () => {
   );
   assert.equal(getAreaLabel("palm", "heartLine", "hi-IN"), "हृदय रेखा");
   assert.equal(getAreaLabel("palm", "heartLine", "en-IN"), "Heart line");
+  assert.deepEqual(
+    getAreas("graphology", "en-US").map(([, label]) => label),
+    [
+      "Letter slant",
+      "Letter size",
+      "Spacing",
+      "Baseline",
+      "Visible pen pressure",
+      "Letter forms",
+    ]
+  );
+  assert.equal(
+    getAreaLabel("graphology", "slant", "hi-IN"),
+    "अक्षरों का झुकाव"
+  );
+  assert.equal(getFeatureLabel("graphology", "en-IN"), "Graphology reading");
 });
 
 test("labels are matched across locales and never leak across features", () => {

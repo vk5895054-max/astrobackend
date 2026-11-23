@@ -25,6 +25,9 @@ const GEMINI_MODEL =
   process.env.READING_GEMINI_MODEL || process.env.GOOGLE_MODEL || "gemini-3.5-flash";
 const VISION_MODEL = process.env.READING_VISION_MODEL || "qwen/qwen3.8-27b";
 
+const normalizeFeature = (feature) =>
+  ["face", "palm", "graphology"].includes(feature) ? feature : "face";
+
 const gemini = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
@@ -122,7 +125,7 @@ const asPoints = (value, limit = 8) => {
 };
 
 const buildPrompt = ({ feature, tier, notes, focus, language }) => {
-  const key = feature === "palm" ? "palm" : "face";
+  const key = normalizeFeature(feature);
   const areas = getAreas(key, language);
   const detailed = tier === "detailed";
 
@@ -130,10 +133,20 @@ const buildPrompt = ({ feature, tier, notes, focus, language }) => {
     .map(([id, label]) => `- ${id} (${label})`)
     .join("\n");
 
-  const subject =
-    key === "face"
-      ? "the visible facial features and proportions"
-      : "the visible palm lines, mounts and hand features";
+  const subject = {
+    face: "the visible facial features and proportions",
+    palm: "the visible palm lines, mounts and hand features",
+    graphology: "the visible handwriting characteristics in the submitted sample",
+  }[key];
+
+  const graphologyRules =
+    key === "graphology"
+      ? `\nGraphology-specific safeguards:
+- Graphology is not scientifically validated. Frame any interpretation as entertainment and self-reflection, never as a factual personality assessment.
+- Describe observable writing characteristics first. Do not claim handwriting proves personality, intelligence, honesty, health, identity, gender, age or any protected characteristic.
+- If the sample has no readable handwriting, explain that it cannot be assessed and do not invent observations.
+`
+      : "";
 
   const promptBody = `You are a traditional ${getFeatureLabel(key, language)} interpreter for an entertainment-focused astrology app.
 Analyse ${subject} in the submitted photo(s). Base every statement only on what is actually visible.
@@ -146,6 +159,7 @@ Rules:
 - Do NOT promise wealth, luck, marriage, career, health or any guaranteed outcome.
 - Keep the tone warm, respectful and non-judgemental. No insults about appearance.
 - Mention that lighting, angle and image quality can change what is visible.
+${graphologyRules}
 ${detailed ? "- Provide deeper, per-area notes in the detailed object with 'observation' and 'interpretation' for every area listed below." : "- Keep the per-area notes to one or two short sentences."}
 
 Areas to cover in the "features" array (use these ids in the "detailed" object):
@@ -153,7 +167,7 @@ ${areaInstructions}
 
 Return ONLY valid JSON with exactly these keys:
 {
-  "summary": "2-3 sentences overall impression",
+  "summary": "2-3 sentences about the visible sample",
   "overallReading": "one short paragraph tying the visible features together",
   "features": [{ "title": "${areas[0][1]}", "detail": "short observation and traditional interpretation" }],
   "strengths": ["short point", "short point"],
@@ -179,8 +193,8 @@ const normalizeReport = (
   tier,
   language = "en-US"
 ) => {
-  const key = feature === "palm" ? "palm" : "face";
-  const otherKey = key === "palm" ? "face" : "palm";
+  const key = normalizeFeature(feature);
+  const otherKeys = ["face", "palm", "graphology"].filter((item) => item !== key);
   const areas = getAreas(key, language);
   const detailed = {};
   for (const [id, label] of areas) {
@@ -200,7 +214,9 @@ const normalizeReport = (
   // A vision model can slip a face area into a palm report (or vice versa).
   // Labels are matched across all supported locales so a Hindi request that
   // still returns English titles is handled the same way.
-  features = features.filter((point) => !findAreaId(otherKey, point.title));
+  features = features.filter(
+    (point) => !otherKeys.some((otherKey) => findAreaId(otherKey, point.title))
+  );
 
   if (!features.length) {
     for (const [id, label] of areas) {
@@ -242,7 +258,7 @@ const normalizeReport = (
     cautions: asStringList(parsed?.cautions),
     suggestions: asStringList(parsed?.suggestions),
     detailed,
-    disclaimer: getDisclaimer(language),
+    disclaimer: getDisclaimer(language, key),
     rawText: String(rawText || "").slice(0, 12000),
   };
 };
@@ -321,7 +337,7 @@ const analyzeReading = async ({
   focus = "",
   language = "en-US",
 } = {}) => {
-  const key = feature === "palm" ? "palm" : "face";
+  const key = normalizeFeature(feature);
   const files = flattenReadingImages(images);
   if (!files.length) {
     throw failure("Please upload at least one clear photo.", 400);
@@ -350,7 +366,12 @@ const analyzeReading = async ({
   }
 
   console.warn(`[Reading] ${key} vision failed:`, errors.join(" | "));
-  throw failure(getMessage(key === "palm" ? "unavailablePalm" : "unavailableFace", language));
+  const unavailableKey = {
+    face: "unavailableFace",
+    palm: "unavailablePalm",
+    graphology: "unavailableGraphology",
+  }[key];
+  throw failure(getMessage(unavailableKey, language));
 };
 
 module.exports = {

@@ -101,11 +101,30 @@ const hydrateBirthLocation = async (body) => {
   const place = body.birthPlace || body.placeOfBirth || body.place || "";
   const baseData = buildHoroscopeData(body);
 
+  const hasCoords = body.latitude !== undefined && body.longitude !== undefined &&
+    Number.isFinite(Number(body.latitude)) && Number.isFinite(Number(body.longitude));
+  const hasExplicitOffset = body.timeZoneOffsetMinutes !== undefined &&
+    Number.isFinite(Number(body.timeZoneOffsetMinutes)) && Number(body.timeZoneOffsetMinutes) !== 0;
+
+  // If client already gave coordinates AND an explicit non-zero timezone offset, use them directly:
+  if (place && hasCoords && hasExplicitOffset) {
+    return {
+      ...baseData,
+      placeOfBirth: place,
+      latitude: Number(body.latitude),
+      longitude: Number(body.longitude),
+      timeZoneOffsetMinutes: Number(body.timeZoneOffsetMinutes),
+      timeZoneId: body.timeZoneId || null,
+      timeZonePrecision: body.timeZonePrecision || "user",
+    };
+  }
+
   // A place determines its historical timezone. In particular, do not let a
   // client default of 0 minutes turn local birth time into UTC.
   if (place) {
     const birthDate = body.birthDate || body.dateOfBirth;
-    const resolved = await resolveBirthLocationFromPlace(place, birthDate);
+    const providedCoords = hasCoords ? { latitude: Number(body.latitude), longitude: Number(body.longitude) } : null;
+    const resolved = await resolveBirthLocationFromPlace(place, birthDate, providedCoords);
     if (!resolved) {
       const error = new Error("Could not resolve the birth place to coordinates and timezone. Please check the place name or provide a timezone offset manually.");
       error.expose = true;

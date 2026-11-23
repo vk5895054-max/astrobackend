@@ -9,6 +9,7 @@ const Message = require("../models/message");
 const Horoscope = require("../models/horoscope");
 const HumanDesignChart = require("../models/humanDesignChart");
 const AstrologerReading = require("../models/astrologerReading");
+const FreeUsage = require("../models/freeUsage");
 const {
   calculateHumanDesignChart,
   summarizeHumanDesignChart,
@@ -98,20 +99,24 @@ const listAstrologers = async (req, res, next) => {
       AstrologerProfile.countDocuments(filter),
     ]);
 
-    const data = await Promise.all(
-      profiles.map(async (p) => {
-        const astrologerId = String(p.user);
-        const freeRemainingSec =
-          req.user && String(req.user._id) !== astrologerId
-            ? await freeRemainingSecFor(req.user._id, p)
-            : (p.freeMinutesLimitMin ?? 10) * 60;
-        return toCard(p, {
-          isBusy: isUserInCall(astrologerId),
-          freeRemainingSec,
-          hasFreeTrial: freeRemainingSec > 0,
-        });
-      }),
-    );
+    const clientFreeUsage = req.user
+      ? await FreeUsage.findOne({ client: req.user._id }).lean()
+      : null;
+    const userFreeUsedSec = clientFreeUsage?.freeSecondsUsed || 0;
+
+    const data = profiles.map((p) => {
+      const astrologerId = String(p.user);
+      const limit = (p.freeMinutesLimitMin ?? 10) * 60;
+      const freeRemainingSec =
+        req.user && String(req.user._id) !== astrologerId
+          ? Math.max(0, limit - userFreeUsedSec)
+          : limit;
+      return toCard(p, {
+        isBusy: isUserInCall(astrologerId),
+        freeRemainingSec,
+        hasFreeTrial: freeRemainingSec > 0,
+      });
+    });
 
     res.json({
       success: true,

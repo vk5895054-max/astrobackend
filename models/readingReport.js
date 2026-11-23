@@ -25,7 +25,7 @@ const imageSchema = new mongoose.Schema(
 const readingReportSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    feature: { type: String, enum: ["face", "palm"], required: true },
+    feature: { type: String, enum: ["face", "palm", "graphology"], required: true },
     tier: { type: String, enum: ["basic", "detailed"], default: "basic" },
     images: { type: [imageSchema], default: [] },
     notes: { type: String, default: "" },

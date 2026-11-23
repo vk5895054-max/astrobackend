@@ -14,6 +14,7 @@ const WalletTransaction = require("../models/walletTransaction");
 const ReadingReport = require("../models/readingReport");
 const ReadingFreeUsage = require("../models/readingFreeUsage");
 const { deleteReadingMedia } = require("../services/readingMediaService");
+const { invalidateAuthUser } = require("../services/authUserCache");
 
 const adminLogin = async (req, res, next) => {
   try {

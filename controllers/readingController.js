@@ -49,6 +49,13 @@ const slug = (value) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
+const featureMessageKey = (prefix, feature) => {
+  const suffix = { face: "Face", palm: "Palm", graphology: "Graphology" }[
+    feature
+  ];
+  return `${prefix}${suffix}`;
+};
+
 // The Flutter client parses one common FacePalmReading model for both
 // features. Returning both the canonical (feature/tier/report) and the flat
 // app-facing (type/summary/features/...) fields keeps a single source of truth
@@ -132,7 +139,7 @@ const createReadingController = (feature) => {
     res.json({
       success: true,
       data: {
-        feature: feature === "palm" ? "palm" : "face",
+        feature,
         freeUsed: 0,
         freeLimit: 0,
         freeRemaining: 0,
@@ -152,10 +159,7 @@ const createReadingController = (feature) => {
       if (!files.length) {
         return res.status(400).json({
           success: false,
-          message: getMessage(
-            feature === "palm" ? "uploadRequiredPalm" : "uploadRequiredFace",
-            req.language
-          ),
+          message: getMessage(featureMessageKey("uploadRequired", feature), req.language),
         });
       }
       if (!hasConsent(req.body?.consent)) {
@@ -219,10 +223,7 @@ const createReadingController = (feature) => {
 
       return res.status(201).json({
         success: true,
-        message: getMessage(
-          feature === "palm" ? "reportReadyPalm" : "reportReadyFace",
-          req.language
-        ),
+        message: getMessage(featureMessageKey("reportReady", feature), req.language),
         data: { ...serialize(doc), billing: doc.billing },
       });
     } catch (error) {
@@ -296,10 +297,7 @@ const createReadingController = (feature) => {
       await ReadingReport.deleteOne({ _id: report._id });
       return res.json({
         success: true,
-        message: getMessage(
-          feature === "palm" ? "deletedPalm" : "deletedFace",
-          req.language
-        ),
+        message: getMessage(featureMessageKey("deleted", feature), req.language),
       });
     } catch (error) {
       return next(error);
@@ -347,10 +345,7 @@ const deleteAnyReport = async (req, res, next) => {
     await ReadingReport.deleteOne({ _id: report._id });
     return res.json({
       success: true,
-      message: getMessage(
-        report.feature === "palm" ? "deletedPalm" : "deletedFace",
-        req.language
-      ),
+      message: getMessage(featureMessageKey("deleted", report.feature), req.language),
     });
   } catch (error) {
     return next(error);
@@ -360,6 +355,7 @@ const deleteAnyReport = async (req, res, next) => {
 module.exports = {
   faceReadingController: createReadingController("face"),
   palmReadingController: createReadingController("palm"),
+  graphologyReadingController: createReadingController("graphology"),
   createReadingController,
   getAnyReport,
   downloadAnyReportPdf,

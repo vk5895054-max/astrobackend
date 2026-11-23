@@ -20,4 +20,6 @@ const savedKundliSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+savedKundliSchema.index({ user: 1, createdAt: -1 });
+
 module.exports = mongoose.model("SavedKundli", savedKundliSchema);

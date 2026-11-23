@@ -18,5 +18,6 @@ savedKundliMatchSchema.index(
   { user: 1, fingerprint: 1 },
   { unique: true },
 );
+savedKundliMatchSchema.index({ user: 1, createdAt: -1 });
 
 module.exports = mongoose.model("SavedKundliMatch", savedKundliMatchSchema);

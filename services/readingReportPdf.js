@@ -34,8 +34,10 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   if (!doc) throw new Error("A reading report is required to build a PDF");
 
   const entry = plain(reading) || {};
-  const featureKey = entry.feature === "palm" ? "palm" : "face";
-  const feature = featureKey === "palm" ? "PALM" : "FACE";
+  const featureKey = ["face", "palm", "graphology"].includes(entry.feature)
+    ? entry.feature
+    : "face";
+  const feature = featureKey.toUpperCase();
   // The built-in PDF font is Latin-1 only: Devanagari labels would be rendered
   // as "?". Keep the structural labels in English for Hindi PDFs while using
   // the Latin-script Hinglish labels for en-IN. The JSON report always keeps
@@ -49,10 +51,15 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   const pdf = new PdfBuilder();
 
   pdf.text(`${feature} READING REPORT`, { size: 20, bold: true, gap: 2 });
-  pdf.text("Traditional interpretation based on visible features", {
+  pdf.text(
+    featureKey === "graphology"
+      ? "Entertainment-focused interpretation based on visible handwriting"
+      : "Traditional interpretation based on visible features",
+    {
     size: 10,
     gap: 2,
-  });
+    }
+  );
   pdf.text(
     [
       `Report ID: ${String(entry._id || "")}`,

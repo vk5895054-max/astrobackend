@@ -45,6 +45,60 @@ test("palm prompt covers all four lines", () => {
   assert.match(prompt, /observation.*interpretation/);
 });
 
+test("graphology prompt focuses on visible writing and avoids factual claims", () => {
+  const prompt = buildPrompt({
+    feature: "graphology",
+    tier: "detailed",
+    notes: "",
+    focus: "",
+    language: "en-US",
+  });
+
+  for (const area of [
+    "slant",
+    "letterSize",
+    "spacing",
+    "baseline",
+    "writingPressure",
+    "letterForms",
+  ]) {
+    assert.match(prompt, new RegExp(area));
+  }
+  assert.match(prompt, /not scientifically validated/i);
+  assert.match(prompt, /do not claim handwriting proves personality/i);
+  assert.match(prompt, /no readable handwriting/i);
+});
+
+test("normalizeReport localizes Graphology areas without accepting palm areas", () => {
+  const report = normalizeReport(
+    {
+      summary: "The writing has a consistent right slant.",
+      features: [
+        { title: "Letter slant", detail: "Mostly upright." },
+        { title: "Heart line", detail: "Not part of this sample." },
+      ],
+      detailed: {
+        slant: {
+          observation: "Mostly upright",
+          interpretation: "This feature alone does not establish a trait.",
+        },
+      },
+    },
+    "",
+    "graphology",
+    "detailed",
+    "hi-IN"
+  );
+
+  assert.deepEqual(
+    report.features.map((item) => item.key),
+    ["slant"]
+  );
+  assert.equal(report.features[0].title, "अक्षरों का झुकाव");
+  assert.equal(report.detailed.slant.label, "अक्षरों का झुकाव");
+  assert.match(report.disclaimer, /वैज्ञानिक रूप से प्रमाणित नहीं/);
+});
+
 test("normalizeReport tolerates malformed or string-shaped model output", () => {
   const report = normalizeReport(
     {

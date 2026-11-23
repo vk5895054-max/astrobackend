@@ -70,6 +70,7 @@ const astrologerReadingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+astrologerReadingSchema.index({ user: 1, createdAt: -1 });
 astrologerReadingSchema.index({ user: 1, astrologer: 1, createdAt: -1 });
 astrologerReadingSchema.index({ astrologer: 1, sharedWithAstrologer: 1, createdAt: -1 });
 
