@@ -34,7 +34,7 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   if (!doc) throw new Error("A reading report is required to build a PDF");
 
   const entry = plain(reading) || {};
-  const featureKey = ["face", "palm", "graphology"].includes(entry.feature)
+  const featureKey = ["face", "palm", "graphology", "drawing"].includes(entry.feature)
     ? entry.feature
     : "face";
   const feature = featureKey.toUpperCase();
@@ -54,7 +54,9 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   pdf.text(
     featureKey === "graphology"
       ? "Entertainment-focused interpretation based on visible handwriting"
-      : "Traditional interpretation based on visible features",
+      : featureKey === "drawing"
+        ? "Exploratory interpretation based only on visible drawing details"
+        : "Traditional interpretation based on visible features",
     {
     size: 10,
     gap: 2,
@@ -63,7 +65,7 @@ const buildReadingReportPdf = ({ report, reading } = {}) => {
   pdf.text(
     [
       `Report ID: ${String(entry._id || "")}`,
-      ...(featureKey === "graphology"
+      ...(featureKey === "graphology" || featureKey === "drawing"
         ? []
         : [`Type: ${titleCase(entry.tier || "basic")}`]),
       `Generated: ${formatDate(entry.createdAt)}`,

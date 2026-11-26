@@ -477,6 +477,19 @@ const publishReport = async ({ report, request, user }) => {
     }
   }
 
+  // Validate the workflow transition before persisting a published report.
+  // Previously an invalid transition returned 409 but left the report visible
+  // to users while the request was still in a non-ready state.
+  if (
+    request.status !== "report_ready" &&
+    !canTransition(request.status, "report_ready")
+  ) {
+    throw buildError(
+      `The report cannot be published while the request is ${STATUS_LABELS[request.status] || request.status}.`,
+      409,
+    );
+  }
+
   report.status = "published";
   report.approvedBy = user._id;
   report.publishedAt = new Date();
@@ -484,22 +497,15 @@ const publishReport = async ({ report, request, user }) => {
   await report.save();
 
   if (request.status !== "report_ready") {
-    if (canTransition(request.status, "report_ready")) {
-      await transitionRequest(request, {
-        to: "report_ready",
-        by: user._id,
-        role: user.role,
-        note: "Report approved and published by reviewer.",
-      });
-    } else if (request.status === "report_ready") {
-      request.lastActionAt = new Date();
-      await request.save();
-    } else {
-      throw buildError(
-        `The report cannot be published while the request is ${STATUS_LABELS[request.status] || request.status}.`,
-        409,
-      );
-    }
+    await transitionRequest(request, {
+      to: "report_ready",
+      by: user._id,
+      role: user.role,
+      note: "Report approved and published by reviewer.",
+    });
+  } else {
+    request.lastActionAt = new Date();
+    await request.save();
   }
 
   notifyUser(

@@ -9,7 +9,7 @@ const { buildReadingReportPdf } = require("../services/readingReportPdf");
 test("Graphology reports are an accepted persisted feature", () => {
   assert.deepEqual(
     ReadingReport.schema.path("feature").enumValues,
-    ["face", "palm", "graphology"]
+    ["face", "palm", "graphology", "drawing"]
   );
 });
 

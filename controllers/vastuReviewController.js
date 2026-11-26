@@ -159,6 +159,12 @@ const getRequestDetail = async (req, res, next) => {
 
 const assignRequest = async (req, res, next) => {
   try {
+    // This endpoint is meant for admin reassignment. The router also admits
+    // astrologers, so enforce it here: an astrologer must use `claim` instead
+    // and cannot overwrite a colleague's assignment (or reassign arbitrarily).
+    if (!isAdmin(req.user)) {
+      throw buildError("Only an admin can assign a Vastu request.", 403);
+    }
     ensureObjectId(req.params.requestId);
     const request = await VastuRequest.findById(req.params.requestId);
     if (!request) throw buildError("Vastu request not found.", 404);

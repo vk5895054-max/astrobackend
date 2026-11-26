@@ -936,6 +936,21 @@ async function calculateFullKundli(inputData) {
   }
 
   const parsedTime = parseNormalizedTime(timeOfBirth);
+  // Defaults for display must not be mistaken for real birth data by the
+  // ephemeris: passing "12:00" made it compute a plausible-looking Ascendant.
+  // Callers that normalize inputs may pass explicit flags so the service knows
+  // whether the values came from the user rather than a display default.
+  const timeProvided =
+    typeof inputData.timeProvided === "boolean"
+      ? inputData.timeProvided
+      : Boolean(timeOfBirth && String(timeOfBirth).trim());
+  const locationProvided =
+    typeof inputData.locationProvided === "boolean"
+      ? inputData.locationProvided
+      : inputData.latitude !== undefined &&
+        inputData.longitude !== undefined &&
+        Number.isFinite(Number(inputData.latitude)) &&
+        Number.isFinite(Number(inputData.longitude));
   const lat = Number(latitude);
   const lon = Number(longitude);
   const tzMinutes = Number(timeZoneOffsetMinutes);
@@ -947,10 +962,10 @@ async function calculateFullKundli(inputData) {
   // Core Vedic Chart calculation
   const chart = calculateVedicChart({
     dateOfBirth: dob,
-    timeOfBirth: parsedTime.formatted24.slice(0, 5),
+    timeOfBirth: timeProvided ? parsedTime.formatted24.slice(0, 5) : null,
     timeZoneOffsetMinutes: tzMinutes,
-    latitude: lat,
-    longitude: lon,
+    latitude: locationProvided ? lat : undefined,
+    longitude: locationProvided ? lon : undefined,
   });
 
   const ascLon = chart.ascendant?.longitude ?? 0;
@@ -1915,17 +1930,27 @@ async function calculateFullKundli(inputData) {
     { id: 34, key: "varsha_kundli", title: "Varsha Kundli", type: "chart", description: "Annual sidereal solar-return chart for the birth location" }
   ];
 
+  // Without a usable birth time/location the ephemeris has no Ascendant. The
+  // old code substituted Aries (0°) and reported it as the user's Lagna, which
+  // silently produced fabricated houses, Chalit and Mangal Dosha.
+  const hasAscendant = Boolean(chart.ascendant) || chart.precision === "full";
+
   return {
     summary: {
       name,
       dob: dob.toISOString().slice(0, 10),
       tob: parsedTime.formatted24,
+      timeOfBirthProvided: Boolean(timeOfBirth && String(timeOfBirth).trim()),
       place,
       gender,
-      lagna: ascRashi,
+      lagna: hasAscendant ? ascRashi : null,
       rashi: moonRashi,
       nakshatra: `${moonNakshatra.name} (${moonNakshatra.pada})`,
-      mangalDosh: mangalDoshStatus,
+      mangalDosh: hasAscendant ? mangalDoshStatus : null,
+      // Surfaced so clients can label an approximate chart honestly.
+      precision: chart.precision || "full",
+      ascendantAvailable: hasAscendant,
+      ...(chart.note ? { note: chart.note } : {}),
       ayanamsa: `N.C.Lahiri (${formatDMS(chart.ayanamshaUsed)})`,
       totalCategories: navigation.length,
     },

@@ -88,6 +88,9 @@ const getBirthDateTime = (dateOfBirth, timeOfBirth, timeZoneOffsetMinutes = 0) =
 };
 
 const calculateNatalChart = ({ dateOfBirth, timeOfBirth, timeZoneOffsetMinutes, moonSign } = {}) => {
+  // An invalid non-empty time is normalized to noon internally; do not label
+  // that result as based on a known birth time.
+  const hasValidTime = Boolean(normalizeTimeOfBirth(timeOfBirth));
   const date = getBirthDateTime(dateOfBirth, timeOfBirth, timeZoneOffsetMinutes);
   if (!date) return { sunSign: null, moonSign: moonSign || null, precision: "unavailable" };
 
@@ -98,7 +101,7 @@ const calculateNatalChart = ({ dateOfBirth, timeOfBirth, timeZoneOffsetMinutes, 
     moonSign: getSignFromLongitude(moonLongitude) || moonSign || null,
     sunLongitude,
     moonLongitude,
-    precision: timeOfBirth ? "birth-time" : "date-only-estimate",
+    precision: hasValidTime ? "birth-time" : "date-only-estimate",
   };
 };
 

@@ -9,16 +9,12 @@ const uploadLogoImage = multer({
     files: 1,
   },
   fileFilter: (req, file, callback) => {
-    const allowed = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/heic",
-      "image/heif",
-    ];
+    // The vision model used for logo reviews accepts these formats natively.
+    // HEIC uploads previously passed this filter only to fail at the provider.
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
     if (!allowed.includes(file.mimetype)) {
       return callback(
-        new Error("Only JPEG, PNG, WebP, or HEIC images are allowed"),
+        new Error("Only JPEG, PNG, or WebP images are allowed"),
       );
     }
     callback(null, true);

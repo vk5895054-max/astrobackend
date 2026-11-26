@@ -31,31 +31,54 @@ const buildCheckoutConfig = (method) => {
 };
 
 const getOrCreateWallet = async (userId) => {
-  let wallet = await Wallet.findOne({ user: userId });
-  if (!wallet) wallet = await Wallet.create({ user: userId, balance: 0 });
-  return wallet;
+  const existing = await Wallet.findOne({ user: userId });
+  if (existing) return existing;
+  try {
+    return await Wallet.create({ user: userId, balance: 0 });
+  } catch (error) {
+    // Concurrent first-time requests race on the unique `user` index.
+    if (error.code !== 11000) throw error;
+    return Wallet.findOne({ user: userId });
+  }
 };
 
 // Idempotent credit: same providerPaymentId never credits twice.
+// The balance is incremented atomically, and a duplicate transaction insert
+// is rolled back, so a concurrent verify + webhook cannot double-credit.
 const creditWalletOnce = async ({ userId, amount, providerPaymentId, orderId, method }) => {
   const existing = await WalletTransaction.findOne({ providerPaymentId }).lean();
   if (existing) {
     const wallet = await getOrCreateWallet(userId);
     return { wallet, transaction: existing, duplicate: true };
   }
-  const wallet = await getOrCreateWallet(userId);
-  wallet.balance += amount;
-  await wallet.save();
-  const transaction = await WalletTransaction.create({
-    user: userId,
-    type: "credit",
-    amount,
-    balanceAfter: wallet.balance,
-    reason: "recharge",
-    providerPaymentId,
-    meta: { method, orderId, paymentId: providerPaymentId },
-  });
-  return { wallet, transaction, duplicate: false };
+
+  const wallet = await Wallet.findOneAndUpdate(
+    { user: userId },
+    { $inc: { balance: amount } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+
+  try {
+    const transaction = await WalletTransaction.create({
+      user: userId,
+      type: "credit",
+      amount,
+      balanceAfter: wallet.balance,
+      reason: "recharge",
+      providerPaymentId,
+      meta: { method, orderId, paymentId: providerPaymentId },
+    });
+    return { wallet, transaction, duplicate: false };
+  } catch (error) {
+    // Reverse the increment when the unique payment-id insert loses the race.
+    await Wallet.updateOne({ user: userId }, { $inc: { balance: -amount } });
+    if (error.code === 11000) {
+      const alreadyCredited = await WalletTransaction.findOne({ providerPaymentId }).lean();
+      const currentWallet = await getOrCreateWallet(userId);
+      return { wallet: currentWallet, transaction: alreadyCredited, duplicate: true };
+    }
+    throw error;
+  }
 };
 
 const getBalance = async (req, res, next) => {
@@ -68,10 +91,20 @@ const getBalance = async (req, res, next) => {
 // POST /api/wallet/recharge/order {amount} — creates backend-owned Razorpay order
 const createRechargeOrder = async (req, res, next) => {
   try {
-    const amount = Number(req.body.amount);
+    const rawAmount = req.body.amount;
+    let amount = Number(rawAmount);
     if (!amount || amount < MIN_RECHARGE || amount > MAX_RECHARGE) {
       return res.status(400).json({ success: false, message: `amount (${MIN_RECHARGE}-${MAX_RECHARGE}) is required` });
     }
+    // Razorpay charges whole paise. Reject sub-paise amounts instead of
+    // charging a rounded figure and crediting a different wallet balance.
+    if (
+      (typeof rawAmount === "string" && !/^\d+(?:\.\d{1,2})?$/.test(rawAmount.trim())) ||
+      Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6
+    ) {
+      return res.status(400).json({ success: false, message: "amount must have at most two decimal places" });
+    }
+    amount = Math.round(amount * 100) / 100;
     if (!isConfigured()) {
       return res.status(503).json({
         success: false,
@@ -200,7 +233,12 @@ const verifyRecharge = async (req, res, next) => {
 const rechargeWebhook = async (req, res, next) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
-    const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+    // HMAC is over the exact bytes Razorpay sent. A re-serialized JSON body is
+    // not equivalent and would silently reject legitimate webhooks.
+    if (!Buffer.isBuffer(req.rawBody) || req.rawBody.length === 0) {
+      return res.status(400).json({ success: false, message: "Missing raw webhook body" });
+    }
+    const rawBody = req.rawBody;
     if (!verifyWebhookSignature(rawBody, signature)) {
       return res.status(400).json({ success: false, message: "Invalid webhook signature" });
     }
@@ -232,13 +270,14 @@ const rechargeWebhook = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// Legacy mock — dev only. Blocked in production unless explicitly allowed.
+// Legacy mock — dev only. Never enabled in production, even if an example
+// env file happened to set ALLOW_MOCK_RECHARGE=true.
 const recharge = async (req, res, next) => {
   try {
-    if (process.env.NODE_ENV === "production" && process.env.ALLOW_MOCK_RECHARGE !== "true") {
+    if (process.env.NODE_ENV === "production") {
       return res.status(403).json({ success: false, message: "Mock recharge is disabled. Use /recharge/order + /recharge/verify." });
     }
-    const amount = Number(req.body.amount);
+    const amount = Math.round(Number(req.body.amount) * 100) / 100;
     if (!amount || amount <= 0 || amount > MAX_RECHARGE) {
       return res.status(400).json({ success: false, message: `amount (1-${MAX_RECHARGE}) is required` });
     }

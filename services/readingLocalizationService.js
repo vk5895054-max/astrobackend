@@ -31,6 +31,15 @@ const GRAPHOLOGY_AREA_ORDER = [
   "letterForms",
 ];
 
+const DRAWING_AREA_ORDER = [
+  "subjectMatter",
+  "composition",
+  "lineAndStroke",
+  "shapeAndForm",
+  "colorUse",
+  "detailsAndSymbols",
+];
+
 const FACE_AREAS = {
   "en-US": {
     forehead: "Forehead",
@@ -109,6 +118,33 @@ const GRAPHOLOGY_AREAS = {
   },
 };
 
+const DRAWING_AREAS = {
+  "en-US": {
+    subjectMatter: "Subject and content",
+    composition: "Composition and layout",
+    lineAndStroke: "Lines and strokes",
+    shapeAndForm: "Shapes and forms",
+    colorUse: "Colors",
+    detailsAndSymbols: "Small details and symbols",
+  },
+  "hi-IN": {
+    subjectMatter: "विषय और सामग्री",
+    composition: "रचना और लेआउट",
+    lineAndStroke: "रेखाएँ और स्ट्रोक",
+    shapeAndForm: "आकार और रूप",
+    colorUse: "रंग",
+    detailsAndSymbols: "छोटे विवरण और प्रतीक",
+  },
+  "en-IN": {
+    subjectMatter: "Subject aur content",
+    composition: "Composition aur layout",
+    lineAndStroke: "Lines aur strokes",
+    shapeAndForm: "Shapes aur forms",
+    colorUse: "Colors",
+    detailsAndSymbols: "Chote details aur symbols",
+  },
+};
+
 const DISCLAIMERS = {
   "en-US":
     "This is a traditional, entertainment-focused interpretation based only on visible features in the submitted photo. It is not a medical, psychological, legal or financial assessment and does not guarantee any outcome.",
@@ -127,6 +163,15 @@ const GRAPHOLOGY_DISCLAIMERS = {
     "Yeh entertainment-focused interpretation photo me dikhne wali handwriting par based hai. Graphology scientifically validated nahi hai; yeh medical, psychological, legal ya financial assessment nahi hai aur kisi result ki guarantee nahi deta.",
 };
 
+const DRAWING_DISCLAIMERS = {
+  "en-US":
+    "This is an exploratory, entertainment-focused reflection based only on what is visible in the submitted drawing — subject matter, colors, shapes, patterns, composition and small details. It is not a diagnostic, medical, psychological, educational, legal or financial assessment and does not establish facts about the artist, including age, gender, identity, ability, personality or wellbeing.",
+  "hi-IN":
+    "यह एक अन्वेषणात्मक, मनोरंजन-केंद्रित चिंतन है जो केवल ड्राइंग में दिखने वाली चीज़ों पर आधारित है — विषय, रंग, आकार, पैटर्न, रचना और छोटे विवरण। यह निदान, चिकित्सा, मनोवैज्ञानिक, शैक्षिक, कानूनी या वित्तीय मूल्यांकन नहीं है और कलाकार के बारे में उम्र, लिंग, पहचान, क्षमता, व्यक्तित्व या कल्याण जैसे तथ्य स्थापित नहीं करता।",
+  "en-IN":
+    "Yeh ek exploratory, entertainment-focused chintan hai jo sirf drawing me dikhne wali cheezon par based hai — subject, colors, shapes, patterns, composition aur chote details. Yeh diagnosis, medical, psychological, educational, legal ya financial assessment nahi hai aur artist ke baare me umr, gender, identity, ability, personality ya wellbeing jaise tathya establish nahi karta.",
+};
+
 const CAUTION_PREFIX = {
   "en-US": "Keep in mind: ",
   "hi-IN": "ध्यान दें: ",
@@ -138,16 +183,19 @@ const FEATURE_LABELS = {
     face: "Face Reading",
     palm: "Palm Reading",
     graphology: "Graphology Reading",
+    drawing: "Drawing Analysis",
   },
   "hi-IN": {
     face: "चेहरा पढ़ना",
     palm: "हाथ पढ़ना",
     graphology: "हस्तलेखन विश्लेषण",
+    drawing: "ड्राइंग विश्लेषण",
   },
   "en-IN": {
     face: "Face reading",
     palm: "Palm reading",
     graphology: "Graphology reading",
+    drawing: "Drawing analysis",
   },
 };
 
@@ -178,6 +226,11 @@ const MESSAGES = {
     deletedFace: "Face Reading report and photos deleted",
     deletedPalm: "Palm Reading report and photos deleted",
     deletedGraphology: "Graphology report and photos deleted",
+    uploadRequiredDrawing: "Please upload a clear photo of your drawing.",
+    unavailableDrawing:
+      "Drawing Analysis is temporarily unavailable. Please try again in a moment.",
+    reportReadyDrawing: "Drawing Analysis report ready",
+    deletedDrawing: "Drawing Analysis report and photos deleted",
   },
   "hi-IN": {
     uploadRequiredFace: "चेहरा पढ़ने के लिए कृपया कम से कम एक स्पष्ट फ़ोटो अपलोड करें।",
@@ -198,6 +251,10 @@ const MESSAGES = {
     deletedFace: "चेहरा पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
     deletedPalm: "हाथ पढ़ने की रिपोर्ट और फ़ोटो हटा दी गईं",
     deletedGraphology: "हस्तलेखन विश्लेषण की रिपोर्ट और फ़ोटो हटा दी गईं",
+    uploadRequiredDrawing: "कृपया अपनी ड्राइंग की स्पष्ट फ़ोटो अपलोड करें।",
+    unavailableDrawing: "ड्राइंग विश्लेषण अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    reportReadyDrawing: "ड्राइंग विश्लेषण की रिपोर्ट तैयार है",
+    deletedDrawing: "ड्राइंग विश्लेषण की रिपोर्ट और फ़ोटो हटा दी गईं",
   },
   "en-IN": {
     uploadRequiredFace: "Face reading ke liye kripya kam se kam ek clear photo upload karein.",
@@ -218,6 +275,11 @@ const MESSAGES = {
     deletedFace: "Face reading report aur photos delete ho gayi",
     deletedPalm: "Palm reading report aur photos delete ho gayi",
     deletedGraphology: "Graphology report aur photos delete ho gayi",
+    uploadRequiredDrawing: "Kripya apni drawing ki clear photo upload karein.",
+    unavailableDrawing:
+      "Drawing analysis abhi temporarily available nahi hai. Kripya thodi der baad try karein.",
+    reportReadyDrawing: "Drawing analysis report taiyar hai",
+    deletedDrawing: "Drawing analysis report aur photos delete ho gayi",
   },
 };
 
@@ -244,14 +306,18 @@ const areaMaps = (feature) =>
     ? PALM_AREAS
     : feature === "graphology"
       ? GRAPHOLOGY_AREAS
-      : FACE_AREAS;
+      : feature === "drawing"
+        ? DRAWING_AREAS
+        : FACE_AREAS;
 
 const areaOrder = (feature) =>
   feature === "palm"
     ? PALM_AREA_ORDER
     : feature === "graphology"
       ? GRAPHOLOGY_AREA_ORDER
-      : FACE_AREA_ORDER;
+      : feature === "drawing"
+        ? DRAWING_AREA_ORDER
+        : FACE_AREA_ORDER;
 
 // [id, label] pairs in a stable order for the requested locale.
 const getAreas = (feature, language) => {
@@ -280,7 +346,9 @@ const getDisclaimer = (language, feature) => {
   const locale = normalizeLocale(language);
   return feature === "graphology"
     ? GRAPHOLOGY_DISCLAIMERS[locale]
-    : DISCLAIMERS[locale];
+    : feature === "drawing"
+      ? DRAWING_DISCLAIMERS[locale]
+      : DISCLAIMERS[locale];
 };
 
 const getCautionPrefix = (language) =>
@@ -288,7 +356,9 @@ const getCautionPrefix = (language) =>
 
 const getFeatureLabel = (feature, language) =>
   FEATURE_LABELS[normalizeLocale(language)][
-    feature === "palm" || feature === "graphology" ? feature : "face"
+    feature === "palm" || feature === "graphology" || feature === "drawing"
+      ? feature
+      : "face"
   ];
 
 const getMessage = (key, language) => {

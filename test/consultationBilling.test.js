@@ -152,6 +152,7 @@ stub("models/walletTransaction.js", {
     state.transactions.push(doc);
     return doc;
   },
+  findOne: async () => null,
 });
 stub("models/consultationQueue.js", {
   findOne: () => queryOf(state.queue),
@@ -413,6 +414,17 @@ test("the free trial no longer applies after it is spent, even with a new astrol
   const gate = await ensureBillable(match);
   assert.equal(gate.ok, false);
   assert.equal(gate.reason, "insufficient_balance", "a new astrologer still requires payment");
+});
+
+test("the unanswered-call timeout never ends a chat consultation", async () => {
+  reset({ limitMin: 10, balance: 100 });
+  const chat = makeMatch({ startedAt: minutesAgo(5) });
+  state.sweepDocs.push(chat);
+
+  const result = await sweepActiveConsultations();
+
+  assert.equal(result.noAnswer, 0);
+  assert.equal(chat.status, "accepted", "chat has no ringing phase to time out");
 });
 
 test("the sweep stops a running session once the paid minutes are gone", async () => {

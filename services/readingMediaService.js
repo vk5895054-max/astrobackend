@@ -78,18 +78,55 @@ const persistOne = async (file, options) => {
 
 const persistReadingImages = async (files = [], userId, feature) => {
   const stored = [];
-  for (const file of files) {
-    stored.push(await persistOne(file, { userId, feature }));
+  try {
+    for (const file of files) {
+      stored.push(await persistOne(file, { userId, feature }));
+    }
+    return stored;
+  } catch (error) {
+    // A multi-image upload can fail halfway through; don't leave the earlier
+    // photos behind (they contain sensitive face/palm/handwriting data).
+    await Promise.allSettled(stored.map((image) => deleteReadingMedia(image)));
+    throw error;
   }
-  return stored;
+};
+
+const deleteLocalMedia = async (image) => {
+  const url = String(image?.url || "");
+  const marker = "/uploads/readings/";
+  const index = url.indexOf(marker);
+  if (index === -1) return false;
+
+  let relative;
+  try {
+    relative = decodeURIComponent(url.slice(index + marker.length).split(/[?#]/)[0]);
+  } catch (_) {
+    return false;
+  }
+  const target = path.resolve(UPLOAD_ROOT, relative);
+  // Only ever remove files inside our own reading upload directory.
+  if (target === UPLOAD_ROOT || !target.startsWith(`${UPLOAD_ROOT}${path.sep}`)) {
+    return false;
+  }
+  try {
+    await fs.unlink(target);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return true;
 };
 
 const deleteReadingMedia = async (image) => {
-  if (!image?.publicId || image.provider !== "cloudinary") return false;
-  await cloudinary.uploader
-    .destroy(image.publicId, { resource_type: "image" })
-    .catch(() => {});
-  return true;
+  if (image?.provider === "cloudinary" && image.publicId) {
+    await cloudinary.uploader
+      .destroy(image.publicId, { resource_type: "image" })
+      .catch(() => {});
+    return true;
+  }
+  if (image?.provider === "local" || image?.url) {
+    return deleteLocalMedia(image);
+  }
+  return false;
 };
 
 module.exports = {

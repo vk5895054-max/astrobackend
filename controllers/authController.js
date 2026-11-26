@@ -26,9 +26,15 @@ const register = async (req, res) => {
         message: "All fields are required",
       });
     }
+    if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid registration details",
+      });
+    }
 
     const existingUser = await User.findOne({
-      email: email.toLowerCase(),
+      email: email.trim().toLowerCase(),
     });
 
     if (existingUser) {
@@ -80,6 +86,14 @@ const register = async (req, res) => {
       questionnaire,
     });
   } catch (error) {
+    // Two registrations with the same email can race past the pre-check and
+    // lose on the unique index. That is a client conflict, not a server error.
+    if (error && error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "User already exists",
+      });
+    }
     console.error("Register Error:", error);
 
     res.status(500).json({
@@ -100,9 +114,15 @@ const login = async (req, res) => {
         message: "Email and password are required",
       });
     }
+    if (typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: email.trim().toLowerCase(),
     });
 
     if (!user) {

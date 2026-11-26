@@ -27,18 +27,26 @@ app.use(apiLanguageMiddleware);
 connectDB();
 
 // Allowed browser origins in production: CLIENT_URL plus optional comma
-// separated CORS_ORIGINS (e.g. the admin panel's URL). With none configured
-// the server keeps the permissive behaviour so a missing var can't break
-// production.
+// separated CORS_ORIGINS (e.g. the admin panel's URL). Production fails closed:
+// reflecting any origin while `credentials: true` would let arbitrary sites
+// call authenticated (including admin) APIs with a victim's cookie.
 const configuredOrigins = [
   ...(process.env.CLIENT_URL || "").split(","),
   ...(process.env.CORS_ORIGINS || "").split(","),
 ]
   .map((origin) => origin.trim())
   .filter(Boolean);
+if (process.env.NODE_ENV === "production" && configuredOrigins.length === 0) {
+  console.warn(
+    "[security] No CLIENT_URL/CORS_ORIGINS configured: cross-origin requests are blocked. " +
+      "Configure an explicit allowlist if the app is served from another origin.",
+  );
+}
 const corsOrigin =
-  process.env.NODE_ENV === "production" && configuredOrigins.length
-    ? configuredOrigins
+  process.env.NODE_ENV === "production"
+    ? configuredOrigins.length
+      ? configuredOrigins
+      : false
     : true;
 
 // Middleware
@@ -126,6 +134,7 @@ const readingRoutes = require("./routes/readingRoutes");
 // Shared app-facing router (the client sends `type` in the request body).
 app.use("/api/face-palm", readingRoutes.facePalmRoutes);
 app.use("/api/graphology", readingRoutes.graphologyRoutes);
+app.use("/api/drawing-analysis", readingRoutes.drawingRoutes);
 app.use("/api/face-reading/admin", readingAdminRoutes.faceReadingAdminRoutes);
 app.use("/api/face-reading", readingRoutes.faceReadingRoutes);
 app.use("/api/palm-reading/admin", readingAdminRoutes.palmReadingAdminRoutes);

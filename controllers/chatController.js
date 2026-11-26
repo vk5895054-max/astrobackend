@@ -165,6 +165,9 @@ const sendMessage = async (req, res, next) => {
 
     const populatedMessage = await populateMessage(message._id);
 
+    // REST and socket sends must behave the same for open chat clients.
+    broadcastMessage(result.match._id.toString(), populatedMessage.toObject());
+
     sendChatNotification({
       recipientId: populatedMessage.recipient?._id || populatedMessage.recipient,
       senderId: req.user._id,
@@ -228,6 +231,8 @@ const sendStickerMessage = async (req, res, next) => {
 };
 
 const sendMediaMessage = async (req, res, next) => {
+  let uploadedPublicId = null;
+  let uploadedResourceType = "image";
   try {
     const result = await getParticipantMatch(req.params.matchId, req.user._id);
     if (result.error) return res.status(result.status).json({ success: false, message: result.error });
@@ -250,6 +255,8 @@ const sendMediaMessage = async (req, res, next) => {
     const uploadResult = await uploadChatMedia(mediaFile.buffer, req.user._id, mediaFile.mimetype);
     const mediaUrl = uploadResult.secure_url;
     const cloudinaryPublicId = uploadResult.public_id;
+    uploadedPublicId = cloudinaryPublicId;
+    uploadedResourceType = mediaType === "video" ? "video" : "image";
 
     await restoreChatForParticipants(result.match);
     const message = await Message.create({
@@ -279,7 +286,13 @@ const sendMediaMessage = async (req, res, next) => {
     );
 
     res.status(201).json({ success: true, message: "Media message sent", data: populatedMessage });
-  } catch (error) { next(error); }
+  } catch (error) {
+    // If the DB write or population failed, don't leave an orphaned asset.
+    if (uploadedPublicId) {
+      await deleteMedia(uploadedPublicId, uploadedResourceType).catch(() => false);
+    }
+    next(error);
+  }
 };
 
 const deleteMessageForMe = async (req, res, next) => {

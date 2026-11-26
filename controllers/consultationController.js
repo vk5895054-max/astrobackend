@@ -20,6 +20,11 @@ const {
   MIN_PAID_BLOCK_MIN,
 } = require("../services/consultationBilling");
 
+// Canonical A/B ordering must match matchmakingController and the unique index,
+// otherwise two users can each create a reverse-ordered match document.
+const orderedUsers = (first, second) =>
+  String(first) < String(second) ? [first, second] : [second, first];
+
 /// The bill fields the app reads back from `end` / `status`, built from the
 /// stored document (used for an already-closed session).
 const billFromMatch = (match) => {
@@ -187,9 +192,10 @@ const requestConsultation = async (req, res, next) => {
         };
         await match.save();
       } else {
+        const [userA, userB] = orderedUsers(req.user._id, astrologerId);
         match = await Match.create({
-          userA: req.user._id,
-          userB: astrologerId,
+          userA,
+          userB,
           matchType: "consultation",
           status: "accepted",
           requestedBy: req.user._id,

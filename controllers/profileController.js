@@ -9,9 +9,25 @@ const DeviceToken = require("../models/deviceToken");
 const ReadingReport = require("../models/readingReport");
 const ReadingFreeUsage = require("../models/readingFreeUsage");
 const { deleteReadingMedia } = require("../services/readingMediaService");
+const { invalidateAuthUser } = require("../services/authUserCache");
 const { uploadProfilePhoto: uploadProfilePhotoToCloudinary, deleteMedia, extractPublicIdFromUrl } = require("../config/cloudinary");
 
 const MAX_PHOTOS = 6;
+
+// Only delete Cloudinary assets this server issued for this specific user.
+// Without this check, setting `photos` to any known URL would let a caller
+// destroy another account's (or another folder's) Cloudinary asset.
+const ownsCloudinaryPhoto = (photo, userId) => {
+  if (typeof photo !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(photo);
+  } catch (_) {
+    return false;
+  }
+  if (parsed.hostname !== "res.cloudinary.com") return false;
+  return parsed.pathname.startsWith(`/astro/profile-photos/${String(userId)}/`);
+};
 
 const profileFields = ["dateOfBirth", "currentCity", "education", "occupation", "relationshipGoal", "about", "photos"];
 const buildProfileData = (body) => Object.fromEntries(profileFields.filter((field) => body[field] !== undefined).map((field) => [field, body[field]]));
@@ -32,8 +48,14 @@ const createProfile = async (req, res, next) => {
     if (Array.isArray(data.photos) && data.photos.length > MAX_PHOTOS) {
       return res.status(400).json({ success: false, message: `A maximum of ${MAX_PHOTOS} photos is allowed` });
     }
-    const profile = await Profile.create({ user: req.user._id, ...data, profileCompleted: true });
-    if (Array.isArray(profile.photos) && profile.photos.length > 0) profile.profilePhoto = profile.photos[0];
+    const profile = await Profile.create({
+      user: req.user._id,
+      ...data,
+      // Persist the primary photo: chat only selects this field, and an
+      // in-memory assignment was discarded before the document was saved.
+      profilePhoto: Array.isArray(data.photos) ? data.photos[0] || null : null,
+      profileCompleted: true,
+    });
     res.status(201).json({ success: true, message: "Profile created", data: serializeProfile(profile) });
   } catch (error) { next(error); }
 };
@@ -52,7 +74,9 @@ const updateProfile = async (req, res, next) => {
     if (Array.isArray(data.photos) && data.photos.length > MAX_PHOTOS) {
       return res.status(400).json({ success: false, message: `A maximum of ${MAX_PHOTOS} photos is allowed` });
     }
-    const profile = await Profile.findOneAndUpdate({ user: req.user._id }, { ...data, profileCompleted: true }, { new: true, runValidators: true });
+    const update = { ...data, profileCompleted: true };
+    if (Array.isArray(data.photos)) update.profilePhoto = data.photos[0] || null;
+    const profile = await Profile.findOneAndUpdate({ user: req.user._id }, update, { new: true, runValidators: true });
     if (!profile) return res.status(404).json({ success: false, message: "Profile not found" });
     res.json({ success: true, message: "Profile updated", data: serializeProfile(profile) });
   } catch (error) { next(error); }
@@ -105,9 +129,9 @@ const deleteProfilePhoto = async (req, res, next) => {
     const photos = existingPhotos(profile);
     if (!photos.includes(photo)) return res.status(404).json({ success: false, message: "Photo not found" });
 
-    const publicId = extractPublicIdFromUrl(photo);
-    if (publicId) {
-      await deleteMedia(publicId, "image").catch(() => {});
+    if (ownsCloudinaryPhoto(photo, req.user._id)) {
+      const publicId = extractPublicIdFromUrl(photo);
+      if (publicId) await deleteMedia(publicId, "image").catch(() => {});
     }
 
     const remaining = photos.filter((item) => item !== photo);
@@ -158,6 +182,7 @@ const deleteProfile = async (req, res, next) => {
       if (profile.profilePhoto) photos.push(profile.profilePhoto);
       
       for (const photoUrl of photos) {
+        if (!ownsCloudinaryPhoto(photoUrl, userId)) continue;
         const publicId = extractPublicIdFromUrl(photoUrl);
         if (publicId) await deleteMedia(publicId, "image").catch(() => {});
       }
@@ -177,13 +202,15 @@ const deleteProfile = async (req, res, next) => {
       Horoscope.deleteMany({ user: userId }),
       AstroConversation.deleteMany({ user: userId }),
       DeviceToken.deleteMany({ user: userId }),
-      Message.deleteMany({ sender: userId }),
+      Message.deleteMany({ $or: [{ sender: userId }, { recipient: userId }] }),
       Match.deleteMany({ $or: [{ userA: userId }, { userB: userId }] }),
       ReadingReport.deleteMany({ user: userId }),
       ReadingFreeUsage.deleteMany({ user: userId }),
     ]);
 
     await User.findByIdAndDelete(userId);
+    // Prevent a still-valid JWT from resolving through the 15s user cache.
+    invalidateAuthUser(userId);
 
     res.clearCookie("token", {
       httpOnly: true,

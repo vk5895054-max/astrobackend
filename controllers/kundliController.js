@@ -152,8 +152,11 @@ const calculateKundli = async (req, res, next) => {
       });
     }
 
-    const rawTob = birthTime || timeOfBirth || "12:00:00";
+    const rawTimeInput = birthTime || timeOfBirth;
+    const rawTob = rawTimeInput || "12:00:00";
     const parsedTime = parseNormalizedTime(rawTob);
+    let locationProvided =
+      Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
 
     let lat = Number(latitude);
     let lon = Number(longitude);
@@ -168,6 +171,7 @@ const calculateKundli = async (req, res, next) => {
         lon = resolved.longitude;
         tzMinutes = resolved.timeZoneOffsetMinutes;
         placeName = resolved.placeOfBirth || placeName;
+        locationProvided = true;
       } else {
         // Default coordinates if geocoding cannot resolve
         lat = 27.1767;
@@ -185,6 +189,8 @@ const calculateKundli = async (req, res, next) => {
       latitude: lat,
       longitude: lon,
       timeZoneOffsetMinutes: tzMinutes,
+      timeProvided: Boolean(rawTimeInput && String(rawTimeInput).trim()),
+      locationProvided,
       save: Boolean(save),
     });
 
@@ -197,7 +203,7 @@ const calculateKundli = async (req, res, next) => {
             $set: {
               name: String(name || req.user.name || "User").trim(),
               dateOfBirth: parsedDob,
-              timeOfBirth: parsedTime.formatted24.slice(0, 5),
+              timeOfBirth: rawTimeInput ? parsedTime.formatted24.slice(0, 5) : null,
               placeOfBirth: placeName,
               latitude: lat,
               longitude: lon,
@@ -476,6 +482,7 @@ const chatKundli = async (req, res, next) => {
     }
 
     let calculatedData = null;
+    let hasRealChart = false;
 
     // Use provided birth details, or fetch from logged-in user
     if (parsedBirthDetails && typeof parsedBirthDetails === "object" && (parsedBirthDetails.dateOfBirth || parsedBirthDetails.birthDate)) {
@@ -486,6 +493,7 @@ const chatKundli = async (req, res, next) => {
             ...parsedBirthDetails,
             dateOfBirth: parsedDob,
           });
+          hasRealChart = Boolean(calculatedData?.summary);
         }
       } catch (e) {
         // Fall back to default or saved chart
@@ -504,25 +512,18 @@ const chatKundli = async (req, res, next) => {
           longitude: saved.longitude,
           timeZoneOffsetMinutes: saved.timeZoneOffsetMinutes,
         });
+        hasRealChart = Boolean(calculatedData?.summary);
       }
     }
 
-    // Default reference chart if none provided
-    if (!calculatedData) {
-      calculatedData = await calculateFullKundli({
-        name: "User",
-        dateOfBirth: new Date(),
-        timeOfBirth: "12:00:00",
-        place: "Agra",
-        latitude: 27.1767,
-        longitude: 78.0081,
-        timeZoneOffsetMinutes: 330,
-      });
-    }
-
-    const chartSummary = calculatedData.summary;
+    // No fabricated reference chart: a made-up current-date/Agra chart used to
+    // be generated here and then presented to the user as their own Lagna/Rashi.
+    // General questions can still be answered, but without personal chart data.
+    const chartSummary = hasRealChart ? calculatedData.summary : null;
     const categoryKey = category.toLowerCase().trim();
-    const specificCategoryData = calculatedData.categories[categoryKey] || null;
+    const specificCategoryData = hasRealChart
+      ? calculatedData.categories[categoryKey] || null
+      : null;
 
     let answer = null;
     let sources = [];
@@ -571,41 +572,45 @@ const chatKundli = async (req, res, next) => {
     }
 
     // Attempt retrieval-augmented generation (RAG) with AI service
+    let generationMode = "ai";
+    let aiVerified = false;
     try {
-      const chartContext = buildChartContextForQA({
-        chartA: calculatedData.rawChart,
-        myChart: myChartSummary,
-        categoryContext: {
-          category: categoryKey,
-          data: specificCategoryData,
-          summary: chartSummary,
-        },
-      });
-
       const promptCategoryPrefix = categoryKey !== "general" ? `[Category: ${categoryKey.toUpperCase()}] ` : "";
       const enrichedQuestion = `${promptCategoryPrefix}${question.trim()}`;
 
-      const aiResponse = await askAstroQuestion(enrichedQuestion, {
-        chartContext,
-        images,
-        language: req.language,
-      });
-      if (aiResponse && aiResponse.answer && typeof aiResponse.answer === "string" && aiResponse.answer.trim().length > 10) {
-        // AI Verification: Check for obvious hallucinations or contradictions
-        const text = aiResponse.answer;
-        const ascendant = chartSummary.lagna;
-        const moon = chartSummary.rashi;
+      const aiOptions = { images, language: req.language };
+      if (hasRealChart) {
+        aiOptions.chartContext = buildChartContextForQA({
+          chartA: calculatedData.rawChart,
+          myChart: myChartSummary,
+          categoryContext: {
+            category: categoryKey,
+            data: specificCategoryData,
+            summary: chartSummary,
+          },
+        });
+      }
 
-        // If AI mentions Lagna or Moon incorrectly, flag and correct
+      const aiResponse = await askAstroQuestion(enrichedQuestion, aiOptions);
+      if (aiResponse && aiResponse.answer && typeof aiResponse.answer === "string" && aiResponse.answer.trim().length > 10) {
+        const text = aiResponse.answer;
         const contradictions = [];
-        if (text.includes("your Ascendant is") && !text.includes(ascendant)) {
-          contradictions.push(`Lagna mismatch detected (expected ${ascendant})`);
+        if (hasRealChart) {
+          // Check every personal fact the answer claims, case-insensitively.
+          if (/your\s+ascendant\s+is/i.test(text) && chartSummary.lagna && !text.toLowerCase().includes(String(chartSummary.lagna).toLowerCase())) {
+            contradictions.push(`Lagna mismatch detected (expected ${chartSummary.lagna})`);
+          }
+          if (/your\s+moon\s+sign\s+is/i.test(text) && chartSummary.rashi && !text.toLowerCase().includes(String(chartSummary.rashi).toLowerCase())) {
+            contradictions.push(`Moon sign mismatch detected (expected ${chartSummary.rashi})`);
+          }
         }
 
         if (contradictions.length === 0) {
           answer = text;
-          sources = aiResponse.sources || [];
-          isGrounded = true;
+          // Only sources the model actually returned are reported as retrieved.
+          sources = Array.isArray(aiResponse.sources) ? aiResponse.sources : [];
+          isGrounded = hasRealChart;
+          aiVerified = hasRealChart;
         }
       }
     } catch (aiError) {
@@ -613,13 +618,20 @@ const chatKundli = async (req, res, next) => {
       // AI provider unavailable or error occurred: fallback to deterministic Vedic interpretation
     }
 
-    // Fallback if AI was unavailable or failed verification
+    // Fallback if AI was unavailable or failed verification.
     if (!answer) {
+      // A canned interpretation must never be returned as an AI/verified
+      // answer. Without a real submitted chart there is nothing to fall back
+      // to, so surface the failure honestly instead of inventing a reading.
+      if (!hasRealChart) {
+        return res.status(503).json({
+          success: false,
+          message: "AI service is currently unavailable. Please try again or provide valid birth details for a chart-grounded answer.",
+        });
+      }
+      generationMode = "fallback";
       answer = generateGroundedCategoryInterpretation(categoryKey, question, chartSummary, specificCategoryData);
-      sources = [
-        { id: "VEDIC_PARASHARI_CORE", title: "Brihat Parashara Hora Shastra", section: categoryKey },
-        { id: "KUNDLI_CHART_CONTEXT", title: "Calculated Vedic Ephemeris", section: "Natal Chart Placements" },
-      ];
+      sources = [];
       isGrounded = true;
     }
 
@@ -630,13 +642,21 @@ const chatKundli = async (req, res, next) => {
         category: categoryKey,
         question: question.trim(),
         answer,
-        verified: true,
+        // `verified` now means "AI output checked against a real chart", not
+        // "a response object was produced". A canned fallback or a general
+        // answer with no submitted chart is explicitly not verified.
+        verified: aiVerified,
+        generationMode,
         verificationDetails: {
           chartGrounded: isGrounded,
-          lagna: chartSummary.lagna,
-          rashi: chartSummary.rashi,
-          nakshatra: chartSummary.nakshatra,
-          mangalDosh: chartSummary.mangalDosh,
+          ...(hasRealChart
+            ? {
+                lagna: chartSummary.lagna,
+                rashi: chartSummary.rashi,
+                nakshatra: chartSummary.nakshatra,
+                mangalDosh: chartSummary.mangalDosh,
+              }
+            : {}),
           ...(myChartSummary
             ? {
                 humanDesignType: myChartSummary.typeLabel,

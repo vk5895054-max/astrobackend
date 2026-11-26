@@ -150,6 +150,28 @@ test("normalizeReport never leaks face areas into a palm report", () => {
   assert.equal(report.detailed.lifeLine.label, "Life line");
 });
 
+test("normalizeReport keeps localized detailed notes instead of raw model text", () => {
+  const report = normalizeReport(
+    {
+      features: [{ title: "Forehead", detail: "Broad forehead in English" }],
+      detailed: {
+        forehead: {
+          observation: "माथा चौड़ा है",
+          interpretation: "जिज्ञासु मन",
+        },
+      },
+    },
+    "",
+    "face",
+    "basic",
+    "hi-IN",
+  );
+
+  assert.equal(report.features[0].title, "माथा");
+  assert.equal(report.features[0].observation, "माथा चौड़ा है");
+  assert.equal(report.features[0].interpretation, "जिज्ञासु मन");
+});
+
 test("normalizeReport falls back to detailed notes when features are missing", () => {
   const report = normalizeReport(
     {

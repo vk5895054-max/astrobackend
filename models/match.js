@@ -38,7 +38,16 @@ const consultationSchema = new mongoose.Schema({
 	channel: { type: String, enum: ["chat", "voice", "video"], default: "chat" },
 	ratePerMin: { type: Number, default: 0, min: 0 },
 	startedAt: { type: Date, default: null },
+	// When the callee actually joined the LiveKit room. Without this field in
+	// the schema, write attempts were silently dropped and ringing time was
+	// billed; chat sessions were also treated as unanswered calls.
+	callConnectedAt: { type: Date, default: null },
 	endedAt: { type: Date, default: null },
+	// Set once the end settlement and its side effects completed, so a late
+	// status poll cannot repeat counters/notifications for the same session.
+	finalizedAt: { type: Date, default: null },
+	// Set when the no-answer refund has been applied (idempotency marker).
+	refundedAt: { type: Date, default: null },
 	durationSec: { type: Number, default: 0, min: 0 },
 	freeSecGranted: { type: Number, default: 0, min: 0 },
 	billableSec: { type: Number, default: 0, min: 0 },
@@ -91,6 +100,8 @@ const matchSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 matchSchema.index({ userA: 1, userB: 1 }, { unique: true });
+// The billing sweep runs every 30s; without this index it scans every match.
+matchSchema.index({ matchType: 1, status: 1, "consultation.startedAt": 1 });
 matchSchema.index({ userA: 1, score: -1, updatedAt: -1 });
 matchSchema.index({ userB: 1, score: -1, updatedAt: -1 });
 

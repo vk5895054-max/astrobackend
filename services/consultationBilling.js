@@ -37,9 +37,16 @@ const FREE_MINUTES_DEFAULT = 10;
 const MIN_PAID_BLOCK_MIN = 1;
 
 const getOrCreateWallet = async (userId) => {
-  let wallet = await Wallet.findOne({ user: userId });
-  if (!wallet) wallet = await Wallet.create({ user: userId, balance: 0 });
-  return wallet;
+  const existing = await Wallet.findOne({ user: userId });
+  if (existing) return existing;
+  try {
+    return await Wallet.create({ user: userId, balance: 0 });
+  } catch (error) {
+    // `user` is unique: a concurrent request may have created it between the
+    // read and insert. Re-read instead of failing the billing tick.
+    if (error.code !== 11000) throw error;
+    return Wallet.findOne({ user: userId });
+  }
 };
 
 const freeLimitSecFor = (profile) =>
@@ -72,19 +79,31 @@ const loadMatch = async (matchOrId) => {
 
 // One settle at a time per match: the sweep, a chat:send gate and the client's
 // status poll can land together, and each would otherwise read the same
-// `billedMin` watermark and charge the same minute twice.
-const inFlight = new Set();
+// `billedMin` watermark and charge the same minute twice. A concurrent caller
+// now waits for the running settle (and re-runs against fresh state) instead of
+// returning `skipped`, which used to abort finalization and skip its side
+// effects entirely.
+const inFlight = new Map();
 
-const settleConsultation = async (matchOrId, options = {}) => {
-  const key = String(
+const settleKey = (matchOrId) =>
+  String(
     typeof matchOrId === "object" && matchOrId !== null ? matchOrId._id : matchOrId,
   );
-  if (inFlight.has(key)) return { skipped: true, matchId: key };
-  inFlight.add(key);
+
+const settleConsultation = async (matchOrId, options = {}) => {
+  const key = settleKey(matchOrId);
+  const running = inFlight.get(key);
+  if (running) await running.catch(() => {});
+  if (inFlight.has(key)) {
+    // A settle started while we were waiting: charge only what is still due.
+    return settleConsultation(matchOrId, options);
+  }
+  const task = settleConsultationUnsafe(matchOrId, options);
+  inFlight.set(key, task);
   try {
-    return await settleConsultationUnsafe(matchOrId, options);
+    return await task;
   } finally {
-    inFlight.delete(key);
+    if (inFlight.get(key) === task) inFlight.delete(key);
   }
 };
 
@@ -265,9 +284,31 @@ const billingPreview = (summary) => {
 /// End the session for good: close the clock, settle the final minute, credit
 /// counters, promote the queue and notify both sides. `reason` is one of
 /// `"ended"`, `"insufficient_balance"`, `"user"`, `"astrologer"`.
-const finalizeConsultation = async (matchOrId, { reason = "ended", now } = {}) => {
+const finalizeInFlight = new Map();
+
+const finalizeConsultation = async (matchOrId, options = {}) => {
+  const key = settleKey(matchOrId);
+  // Only one caller may run the post-settlement side effects (counters,
+  // notifications, queue promotion) for a given match at a time. Previously
+  // two racing end/status calls could both emit and double-count.
+  if (finalizeInFlight.has(key)) return finalizeInFlight.get(key);
+  const task = finalizeConsultationUnsafe(matchOrId, options);
+  finalizeInFlight.set(key, task);
+  try {
+    return await task;
+  } finally {
+    if (finalizeInFlight.get(key) === task) finalizeInFlight.delete(key);
+  }
+};
+
+const finalizeConsultationUnsafe = async (matchOrId, { reason = "ended", now } = {}) => {
   const match = await loadMatch(matchOrId);
   if (!match || match.matchType !== "consultation" || !match.consultation) return null;
+
+  // Already finalized: return the stored bill without repeating side effects.
+  if (match.consultation.finalizedAt) {
+    return settleConsultation(match, { now: match.consultation.endedAt });
+  }
 
   if (match.status !== "ended") {
     match.status = "ended";
@@ -280,6 +321,11 @@ const finalizeConsultation = async (matchOrId, { reason = "ended", now } = {}) =
     now: match.consultation.endedAt,
   });
   if (!summary || summary.skipped) return summary;
+
+  // Persisted guard for later calls (including other processes). The in-flight
+  // map already prevents same-process duplicates while this runs.
+  match.consultation.finalizedAt = now ? new Date(now) : new Date();
+  await match.save();
 
   await AstrologerProfile.updateOne(
     { user: match.consultation.astrologer },
@@ -340,7 +386,9 @@ const sweepActiveConsultations = async ({ limit = 200 } = {}) => {
     status: { $in: ["accepted", "active"] },
     "consultation.client": { $exists: true },
     "consultation.startedAt": { $ne: null },
-  }).limit(limit);
+  })
+    .sort({ "consultation.startedAt": 1 })
+    .limit(limit);
 
   let settled = 0;
   let stopped = 0;
@@ -352,11 +400,24 @@ const sweepActiveConsultations = async ({ limit = 200 } = {}) => {
       // starting, end the consultation and refund any charges. This handles
       // the case where the astrologer doesn't answer the call.
       const c = match.consultation;
-      if (!c.callConnectedAt && c.startedAt) {
+      // A "no answer" timeout only makes sense for voice/video calls: chat
+      // sessions have no connection event to wait for and must not be killed.
+      if (
+        !c.callConnectedAt &&
+        c.startedAt &&
+        (c.channel === "voice" || c.channel === "video")
+      ) {
         const elapsedSec = Math.round((now.getTime() - new Date(c.startedAt).getTime()) / 1000);
         if (elapsedSec > 60) {
-          // Refund any charges that were deducted during the ringing period
-          if (c.amount > 0 && c.billedMin > 0) {
+          // Refund any charges that were deducted during the ringing period.
+          // A persisted marker + unique transaction lookup make this idempotent
+          // across repeated sweeps and restarts.
+          const priorRefund = await WalletTransaction.findOne({
+            consultationMatch: match._id,
+            reason: "refund",
+            "meta.refundReason": "no_answer",
+          });
+          if (!c.refundedAt && !priorRefund && c.amount > 0 && c.billedMin > 0) {
             const wallet = await getOrCreateWallet(c.client);
             wallet.balance += c.amount;
             await wallet.save();
@@ -382,6 +443,13 @@ const sweepActiveConsultations = async ({ limit = 200 } = {}) => {
               consultationMatch: match._id,
               meta: { refundReason: "no_answer", originalAmount: c.amount },
             });
+            // Reverse the lifetime earning credited at settlement time.
+            await AstrologerProfile.updateOne(
+              { user: c.astrologer },
+              { $inc: { totalEarnings: -c.amount } },
+            );
+            c.refundedAt = new Date();
+            await match.save();
           }
           await finalizeConsultation(match, { reason: "no_answer" });
           noAnswer += 1;

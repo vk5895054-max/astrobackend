@@ -50,9 +50,12 @@ const slug = (value) =>
     .replace(/^_+|_+$/g, "");
 
 const featureMessageKey = (prefix, feature) => {
-  const suffix = { face: "Face", palm: "Palm", graphology: "Graphology" }[
-    feature
-  ];
+  const suffix = {
+    face: "Face",
+    palm: "Palm",
+    graphology: "Graphology",
+    drawing: "Drawing",
+  }[feature];
   return `${prefix}${suffix}`;
 };
 
@@ -184,9 +187,10 @@ const createReadingController = (feature) => {
         });
       }
 
-      // Graphology uses a single basic report; other readings may request detail.
+      // Graphology and Drawing use a single basic report; other readings may
+      // request detail.
       const tier =
-        feature === "graphology"
+        feature === "graphology" || feature === "drawing"
           ? "basic"
           : req.body?.tier === "detailed"
             ? "detailed"
@@ -194,16 +198,17 @@ const createReadingController = (feature) => {
 
       // The app sends a stable focus slug; expand it before it reaches the
       // prompt and the stored report. Older free-text clients keep working.
-      const focusText =
-        normalizeFocusText(req.body?.notes, 1000) ||
-        normalizeFocusText(req.body?.focus, 300);
+      // Keep `notes` and `focus` distinct: when both are supplied the AI must
+      // see both, instead of silently dropping the selected focus.
+      const notes = normalizeFocusText(req.body?.notes, 1000);
+      const focus = normalizeFocusText(req.body?.focus, 300);
 
       const result = await analyzeReading({
         feature,
         images: files,
         tier,
-        notes: focusText,
-        focus: "",
+        notes,
+        focus,
         language: req.language,
       });
 
@@ -214,8 +219,10 @@ const createReadingController = (feature) => {
         feature,
         tier,
         images: storedImages,
-        notes: focusText,
-        focus: "",
+        // `notes` mirrors the older single-field contract so clients that only
+        // ever sent one field still see their text in the saved report.
+        notes: notes || focus,
+        focus,
         language: req.language || "en-US",
         report: result,
         quality,
@@ -361,6 +368,7 @@ module.exports = {
   faceReadingController: createReadingController("face"),
   palmReadingController: createReadingController("palm"),
   graphologyReadingController: createReadingController("graphology"),
+  drawingReadingController: createReadingController("drawing"),
   createReadingController,
   getAnyReport,
   downloadAnyReportPdf,

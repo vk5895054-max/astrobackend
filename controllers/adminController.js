@@ -22,8 +22,11 @@ const adminLogin = async (req, res, next) => {
     if (!email || !password) {
       return res.status(400).json({ success: false, message: "Email and password are required" });
     }
+    if (typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid admin credentials" });
+    }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     if (!user || user.role !== "admin") {
       return res.status(401).json({ success: false, message: "Invalid admin credentials" });
     }
@@ -204,6 +207,8 @@ const updateUserStatus = async (req, res, next) => {
     }
     const user = await User.findByIdAndUpdate(req.params.userId, { isActive }, { new: true });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    // A cached JWT user must not keep its old isActive flag for the cache TTL.
+    invalidateAuthUser(req.params.userId);
     res.json({ success: true, message: isActive ? "User activated" : "User deactivated", data: user.toSafeObject() });
   } catch (error) { next(error); }
 };
@@ -216,6 +221,8 @@ const updateUserRole = async (req, res, next) => {
     }
     const user = await User.findByIdAndUpdate(req.params.userId, { role }, { new: true });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    // Otherwise a demoted admin can still pass adminProtect until the TTL ends.
+    invalidateAuthUser(req.params.userId);
     res.json({ success: true, message: "Role updated", data: user.toSafeObject() });
   } catch (error) { next(error); }
 };
@@ -227,6 +234,8 @@ const deleteUser = async (req, res, next) => {
     }
     const user = await User.findByIdAndDelete(req.params.userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    // Revoke cached identity immediately instead of waiting for the TTL.
+    invalidateAuthUser(req.params.userId);
 
     const readingReports = await ReadingReport.find({ user: req.params.userId }).lean();
     for (const report of readingReports) {
@@ -241,7 +250,7 @@ const deleteUser = async (req, res, next) => {
       Horoscope.deleteMany({ user: req.params.userId }),
       AstroConversation.deleteMany({ user: req.params.userId }),
       DeviceToken.deleteMany({ user: req.params.userId }),
-      Message.deleteMany({ sender: req.params.userId }),
+      Message.deleteMany({ $or: [{ sender: req.params.userId }, { recipient: req.params.userId }] }),
       Match.deleteMany({ $or: [{ userA: req.params.userId }, { userB: req.params.userId }] }),
       AstrologerProfile.deleteMany({ user: req.params.userId }),
       Wallet.deleteMany({ user: req.params.userId }),
@@ -643,7 +652,9 @@ const deactivateDeviceToken = async (req, res, next) => {
     }
     const token = await DeviceToken.findByIdAndUpdate(req.params.tokenId, { isActive }, { new: true });
     if (!token) return res.status(404).json({ success: false, message: "Device token not found" });
-    res.json({ success: true, message: isActive ? "Token activated" : "Token deactivated", data: token });
+    const data = token.toObject();
+    data.token = `${String(data.token).slice(0, 8)}...`;
+    res.json({ success: true, message: isActive ? "Token activated" : "Token deactivated", data });
   } catch (error) { next(error); }
 };
 

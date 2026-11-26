@@ -226,6 +226,9 @@ const setupChatSockets = (io) => {
       try {
         const match = await getParticipantMatch(matchId, socket.user._id);
         if (!match) return acknowledge({ success: false, message: "Calls are available only after the match request is accepted" });
+        if (match.matchType === "consultation" && match.status === "ended") {
+          return acknowledge({ success: false, message: "This consultation has ended" });
+        }
         if (!["voice", "video"].includes(kind)) return acknowledge({ success: false, message: "kind must be voice or video" });
 
         // Same pay-first rule for calls: after the free minutes the client must
@@ -273,7 +276,9 @@ const setupChatSockets = (io) => {
           callerPhoto,
           matchId,
           kind,
-        });
+        }).catch((error) =>
+          console.error("[push] call notification failed:", error?.message || error),
+        );
 
         acknowledge({ success: true, callee: { id: calleeId, name: calleeName, photo: calleePhoto } });
       } catch (error) {

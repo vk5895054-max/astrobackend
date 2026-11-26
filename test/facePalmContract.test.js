@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+const ReadingReport = require("../models/readingReport");
+const readingRoutes = require("../routes/readingRoutes");
 const { validateReadingImage } = require("../services/readingVisionService");
 const { serializeReadingReport } = require("../controllers/readingController");
 
@@ -20,6 +22,66 @@ test("unusable photos are rejected before any paid AI call", () => {
   const valid = validateReadingImage(image());
   assert.equal(valid.valid, true);
   assert.equal(valid.message, "");
+});
+
+test("shared face-palm analyze rejects an unknown type instead of running face reading", async () => {
+  const layer = readingRoutes.facePalmRoutes.stack.find(
+    (item) => item.route?.path === "/analyze",
+  );
+  const handler = layer.route.stack.at(-1).handle;
+  let status;
+  let body;
+  const res = {
+    status(code) {
+      status = code;
+      return this;
+    },
+    json(value) {
+      body = value;
+      return this;
+    },
+  };
+
+  await handler(
+    { body: { type: "graphology" }, files: {}, user: { _id: "ignored" } },
+    res,
+    () => {},
+  );
+
+  assert.equal(status, 400);
+  assert.equal(body.code, "INVALID_READING_TYPE");
+});
+
+test("saved report keeps stable area keys and localized observation fields", () => {
+  const doc = new ReadingReport({
+    user: "68a000000000000000000001",
+    feature: "face",
+    language: "hi-IN",
+    consent: { acceptedAt: new Date() },
+    report: {
+      features: [
+        {
+          key: "forehead",
+          title: "माथा",
+          detail: "broad",
+          observation: "चौड़ा",
+          interpretation: "जिज्ञासु",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(doc.toObject().report.features[0], {
+    key: "forehead",
+    title: "माथा",
+    detail: "broad",
+    observation: "चौड़ा",
+    interpretation: "जिज्ञासु",
+  });
+  assert.equal(
+    serializeReadingReport(doc).features[0].key,
+    "forehead",
+  );
 });
 
 test("saved report is serialized into the app's FacePalmReading contract", () => {

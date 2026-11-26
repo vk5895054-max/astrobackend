@@ -1,6 +1,18 @@
 const DeviceToken = require("../models/deviceToken");
 const { sendNotificationToUser } = require("../services/notificationService");
 
+// Device tokens are push credentials and must never be echoed back in full.
+const maskToken = (token) => {
+  if (typeof token !== "string" || token.length < 12) return "***";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+};
+
+const sanitizeDeviceToken = (doc) => {
+  const data = typeof doc?.toObject === "function" ? doc.toObject() : { ...doc };
+  if (data.token) data.token = maskToken(data.token);
+  return data;
+};
+
 const registerDeviceToken = async (req, res, next) => {
   try {
     const { token, platform } = req.body;
@@ -12,14 +24,27 @@ const registerDeviceToken = async (req, res, next) => {
       });
     }
 
+    const cleanToken = token.trim();
+    // A token is tied to the account that registered it. Previously an upsert
+    // on `{ token }` alone let any authenticated user steal another account's
+    // push credential by submitting a token they had learned.
+    const owned = await DeviceToken.findOne({ token: cleanToken }).lean();
+    if (owned && String(owned.user) !== String(req.user._id)) {
+      return res.status(409).json({
+        success: false,
+        message: "This device token is registered to another account",
+      });
+    }
+
     const deviceToken = await DeviceToken.findOneAndUpdate(
-      { token: token.trim() },
+      { user: req.user._id, token: cleanToken },
       {
-        user: req.user._id,
-        token: token.trim(),
-        platform: platform || "unknown",
-        isActive: true,
-        lastUsedAt: new Date(),
+        $set: {
+          platform: platform || "unknown",
+          isActive: true,
+          lastUsedAt: new Date(),
+        },
+        $setOnInsert: { user: req.user._id, token: cleanToken },
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
@@ -27,7 +52,7 @@ const registerDeviceToken = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "FCM token registered successfully",
-      data: deviceToken,
+      data: sanitizeDeviceToken(deviceToken),
     });
   } catch (error) {
     next(error);
@@ -84,7 +109,7 @@ const getMyDeviceTokens = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: tokens,
+      data: tokens.map(sanitizeDeviceToken),
     });
   } catch (error) {
     next(error);
@@ -105,7 +130,13 @@ const sendTestNotification = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Notification processed",
-      data: result,
+      data: {
+        ...result,
+        results: (result.results || []).map((item) => ({
+          ...item,
+          token: maskToken(item.token),
+        })),
+      },
     });
   } catch (error) {
     next(error);

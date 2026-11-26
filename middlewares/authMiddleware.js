@@ -23,7 +23,9 @@ const protect = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ["HS256"],
+    });
     const userId = decoded.userId || decoded.id;
 
     const user = await getCachedUser(userId);
@@ -58,7 +60,9 @@ const optionalProtect = async (req, res, next) => {
     }
 
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
       const userId = decoded.userId || decoded.id;
       const user = await getCachedUser(userId);
       if (user && user.isActive) {

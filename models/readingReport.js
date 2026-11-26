@@ -5,8 +5,13 @@ const mongoose = require("mongoose");
 // report can be deleted without leaving the photo behind (privacy requirement).
 const pointSchema = new mongoose.Schema(
   {
+    // Stable area id from the AI prompt (e.g. `heartLine`). Keeping it makes
+    // the report usable even when the localized title changes.
+    key: { type: String, default: "" },
     title: { type: String, default: "" },
     detail: { type: String, default: "" },
+    observation: { type: String, default: "" },
+    interpretation: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -25,7 +30,11 @@ const imageSchema = new mongoose.Schema(
 const readingReportSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    feature: { type: String, enum: ["face", "palm", "graphology"], required: true },
+    feature: {
+      type: String,
+      enum: ["face", "palm", "graphology", "drawing"],
+      required: true,
+    },
     tier: { type: String, enum: ["basic", "detailed"], default: "basic" },
     images: { type: [imageSchema], default: [] },
     notes: { type: String, default: "" },

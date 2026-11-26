@@ -95,6 +95,12 @@ const analyze = async (req, res, next) => {
         message: "Please upload the logo you want reviewed.",
       });
     }
+    if (!Buffer.isBuffer(req.file.buffer) || req.file.buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "The uploaded logo is empty. Please upload a valid image.",
+      });
+    }
 
     const companyName = cleanField(req.body?.companyName, 80);
     const notes = cleanField(req.body?.notes, 1000);
