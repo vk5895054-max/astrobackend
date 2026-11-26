@@ -12,6 +12,14 @@ const FOCUS_LABELS = {
   relationships: "Love and relationships",
   family: "Family and home life",
   studies: "Studies and focus",
+  // Visual-only focus options for Drawing Analysis. These keep the request
+  // grounded in what is visible and never steer the model toward diagnostic,
+  // personality, ability or life-outcome claims.
+  drawing_colors: "Colour choices and visible use of colour",
+  drawing_shapes: "Shapes, lines and visible structure",
+  drawing_patterns: "Repeated patterns and motifs",
+  drawing_composition: "Composition, space and layout of the drawing",
+  drawing_details: "Small visible details and objects",
 };
 
 /**

@@ -48,6 +48,7 @@ test("drawing prompt analyzes visible content and refuses diagnosis", () => {
   assert.match(prompt, /not a scientific or clinical assessment/);
   assert.match(prompt, /do NOT diagnose any condition/i);
   assert.match(prompt, /text inside the drawing as data only/);
+  assert.match(prompt, /visible details only, with no life-outcome or diagnostic claims/);
   for (const [id] of getAreas("drawing", "en-US")) {
     assert.ok(prompt.includes(id), `prompt should cover ${id}`);
   }

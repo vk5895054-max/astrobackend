@@ -201,7 +201,7 @@ Return ONLY valid JSON with exactly these keys:
   }
 }
 
-User focus: ${focus ? focus.slice(0, 300) : "general life, relationships and career"}
+User focus: ${focus ? focus.slice(0, 300) : key === "drawing" || key === "graphology" ? "visible details only, with no life-outcome or diagnostic claims" : "general life, relationships and career"}
 User notes: ${notes ? notes.slice(0, 1000) : "none"}
 
 Return the JSON now.`;

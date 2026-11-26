@@ -13,6 +13,14 @@ test("maps app focus slugs to readable prompt text", () => {
     "Love and relationships",
   );
   assert.equal(normalizeFocusText("studies"), "Studies and focus");
+  assert.equal(
+    normalizeFocusText("drawing_colors"),
+    "Colour choices and visible use of colour",
+  );
+  assert.equal(
+    normalizeFocusText("drawing_composition"),
+    "Composition, space and layout of the drawing",
+  );
 });
 
 test("keeps legacy free text and ignores empty or invalid values", () => {

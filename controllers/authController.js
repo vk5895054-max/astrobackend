@@ -2,6 +2,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 const Questionnaire = require("../models/questionnaire");
+const refreshTokenService = require("../services/refreshTokenService");
+
+const cookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+});
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -68,18 +75,22 @@ const register = async (req, res) => {
     }
 
     const token = generateToken(user._id);
+    const refreshToken = await refreshTokenService.issueFor(user);
 
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      ...cookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie("refreshToken", refreshToken, {
+      ...cookieOptions(),
+      maxAge: refreshTokenService.REFRESH_TTL_MS,
     });
 
     res.status(201).json({
       success: true,
       message: "Registration successful",
       token,
+      refreshToken,
       user: {
         ...user.toSafeObject(),
       },
@@ -123,7 +134,7 @@ const login = async (req, res) => {
 
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
-    });
+    }).select("+refreshTokens");
 
     if (!user) {
       return res.status(401).json({
@@ -152,18 +163,22 @@ const login = async (req, res) => {
     }
 
     const token = generateToken(user._id);
+    const refreshToken = await refreshTokenService.issueFor(user);
 
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      ...cookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie("refreshToken", refreshToken, {
+      ...cookieOptions(),
+      maxAge: refreshTokenService.REFRESH_TTL_MS,
     });
 
     res.status(200).json({
       success: true,
       message: "Login successful",
       token,
+      refreshToken,
       user: {
         ...user.toSafeObject(),
       },
@@ -181,11 +196,13 @@ const login = async (req, res) => {
 // LOGOUT
 const logout = async (req, res) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    });
+    // Only this device's refresh session is revoked; other signed-in devices
+    // stay logged in until they log out themselves.
+    await refreshTokenService.revoke(
+      (req.body && req.body.refreshToken) || req.cookies?.refreshToken
+    );
+    res.clearCookie("token", cookieOptions());
+    res.clearCookie("refreshToken", cookieOptions());
 
     res.status(200).json({
       success: true,
@@ -195,6 +212,47 @@ const logout = async (req, res) => {
     console.error("Logout Error:", error);
 
     res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// REFRESH
+// A short-lived access token can expire without forcing a full login. The
+// refresh token is single-use and rotated on every call, so a stolen copy
+// cannot be replayed after the legitimate device has refreshed.
+const refresh = async (req, res) => {
+  try {
+    const raw =
+      (req.body && req.body.refreshToken) || req.cookies?.refreshToken;
+    const rotated = await refreshTokenService.rotate(raw);
+    if (!rotated) {
+      return res.status(401).json({
+        success: false,
+        message: "Session expired. Please log in again.",
+      });
+    }
+
+    const token = generateToken(rotated.user._id);
+    res.cookie("token", token, {
+      ...cookieOptions(),
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie("refreshToken", rotated.refreshToken, {
+      ...cookieOptions(),
+      maxAge: refreshTokenService.REFRESH_TTL_MS,
+    });
+
+    return res.status(200).json({
+      success: true,
+      token,
+      refreshToken: rotated.refreshToken,
+      user: rotated.user.toSafeObject(),
+    });
+  } catch (error) {
+    console.error("Refresh Error:", error);
+    return res.status(500).json({
       success: false,
       message: "Server error",
     });
@@ -231,5 +289,6 @@ module.exports = {
   register,
   login,
   logout,
+  refresh,
   getMe,
 };

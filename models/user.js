@@ -39,6 +39,19 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Hashed refresh sessions. Never returned by a normal query or `toSafeObject`.
+    // The list keeps one active session per device and is capped in the service.
+    refreshTokens: {
+      type: [
+        {
+          hash: { type: String, required: true },
+          expiresAt: { type: Date, required: true },
+        },
+      ],
+      default: [],
+      select: false,
+    },
   },
   {
     timestamps: true,
@@ -47,6 +60,7 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ role: 1, isActive: 1 });
 userSchema.index({ createdAt: -1 });
+userSchema.index({ "refreshTokens.hash": 1 });
 
 userSchema.pre("save", async function savePassword() {
   if (!this.isModified("password")) return;

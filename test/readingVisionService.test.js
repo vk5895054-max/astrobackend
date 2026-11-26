@@ -67,6 +67,7 @@ test("graphology prompt focuses on visible writing and avoids factual claims", (
   assert.match(prompt, /not scientifically validated/i);
   assert.match(prompt, /do not claim handwriting proves personality/i);
   assert.match(prompt, /no readable handwriting/i);
+  assert.match(prompt, /visible details only, with no life-outcome or diagnostic claims/);
 });
 
 test("normalizeReport localizes Graphology areas without accepting palm areas", () => {
