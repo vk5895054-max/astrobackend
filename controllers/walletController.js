@@ -5,6 +5,8 @@ const { getClient, isConfigured, verifyPaymentSignature, verifyWebhookSignature 
 
 const MIN_RECHARGE = 10;
 const MAX_RECHARGE = 100000;
+// Fixed denominations offered by the AI Jyotishi recharge sheet.
+const AI_JYOTISHI_PRESETS = [50, 100, 200, 500];
 const ALLOWED_METHODS = ["upi", "card", "netbanking", "wallet", "all"];
 
 const currency = () => (process.env.CURRENCY || "INR").toUpperCase();
@@ -105,6 +107,12 @@ const createRechargeOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "amount must have at most two decimal places" });
     }
     amount = Math.round(amount * 100) / 100;
+    if (req.body.aiJyotishi === true && !AI_JYOTISHI_PRESETS.includes(amount)) {
+      return res.status(400).json({
+        success: false,
+        message: `AI Jyotishi recharge amount must be one of: ${AI_JYOTISHI_PRESETS.join(", ")}`,
+      });
+    }
     if (!isConfigured()) {
       return res.status(503).json({
         success: false,
@@ -293,6 +301,12 @@ const recharge = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+const rechargePresets = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: { presets: AI_JYOTISHI_PRESETS, currency: currency() } });
+  } catch (error) { next(error); }
+};
+
 const listTransactions = async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -306,4 +320,4 @@ const listTransactions = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { getBalance, recharge, createRechargeOrder, verifyRecharge, rechargeWebhook, listTransactions };
+module.exports = { getBalance, recharge, createRechargeOrder, verifyRecharge, rechargeWebhook, listTransactions, rechargePresets, AI_JYOTISHI_PRESETS };

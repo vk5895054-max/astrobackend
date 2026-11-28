@@ -17,6 +17,8 @@ const walletTransactionSchema = new mongoose.Schema(
         "numerology_charge",
         "face_reading_charge",
         "palm_reading_charge",
+        "ai_jyotishi_charge",
+        "ai_jyotishi_refund",
       ],
       required: true,
     },

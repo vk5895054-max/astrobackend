@@ -122,6 +122,7 @@ app.use("/api/matchmaking", require("./routes/matchMakingRoute"));
 app.use("/api/chat", require("./routes/chatRoutes"));
 app.use("/api/calls", require("./routes/callRoutes"));
 app.use("/api/astrologers", require("./routes/astrologerRoutes"));
+app.use("/api/ai-jyotishis", require("./routes/aiJyotishiRoutes"));
 app.use("/api/consultations", require("./routes/consultationRoutes"));
 app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/astrologer", require("./routes/astrologerDashboardRoutes"));

@@ -16,6 +16,30 @@ const ReadingFreeUsage = require("../models/readingFreeUsage");
 const { deleteReadingMedia } = require("../services/readingMediaService");
 const { invalidateAuthUser } = require("../services/authUserCache");
 
+const badRequest = (message) => {
+  const error = new Error(message);
+  error.statusCode = 422;
+  error.expose = true;
+  return error;
+};
+
+const escapeRegex = (value) =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const boundedNumber = (value, min, max, field) => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) throw badRequest(`${field} must be a number`);
+  return Math.min(Math.max(parsed, min), max);
+};
+
+const stringList = (value, field) => {
+  if (!Array.isArray(value)) throw badRequest(`${field} must be an array`);
+  return value
+    .filter((item) => typeof item === "string" && item.trim())
+    .map((item) => item.trim().slice(0, 120))
+    .slice(0, 40);
+};
+
 const adminLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -598,9 +622,10 @@ const listAstrologers = async (req, res, next) => {
     const { search, online, verified } = req.query;
     const userFilter = { role: "astrologer" };
     if (search) {
+      const needle = escapeRegex(search);
       userFilter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
+        { name: { $regex: needle, $options: "i" } },
+        { email: { $regex: needle, $options: "i" } },
       ];
     }
     const users = await User.find(userFilter).select("_id").lean();
@@ -618,12 +643,59 @@ const listAstrologers = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+const getAstrologerDetail = async (req, res, next) => {
+  try {
+    const profile = await AstrologerProfile.findOne({ user: req.params.astrologerId })
+      .populate("user", "name email gender isActive role createdAt")
+      .lean();
+    if (!profile) return res.status(404).json({ success: false, message: "Astrologer not found" });
+    res.json({ success: true, data: profile });
+  } catch (error) { next(error); }
+};
+
 const updateAstrologer = async (req, res, next) => {
   try {
     const profile = await AstrologerProfile.findOne({ user: req.params.astrologerId });
     if (!profile) return res.status(404).json({ success: false, message: "Astrologer not found" });
-    const allowed = ["displayName", "photo", "bio", "expertise", "languages", "experienceYears", "rateChatPerMin", "rateCallPerMin", "isOnline", "isVerified", "freeMinutesEnabled", "freeMinutesLimitMin"];
-    for (const key of allowed) if (req.body[key] !== undefined) profile[key] = req.body[key];
+
+    const body = req.body || {};
+    const strings = ["displayName", "bio"];
+    for (const key of strings) {
+      if (body[key] === undefined) continue;
+      if (typeof body[key] !== "string") throw badRequest(`${key} must be a string`);
+      profile[key] = body[key].trim().slice(0, key === "bio" ? 2000 : 120);
+    }
+    if (body.displayName !== undefined && !profile.displayName) {
+      throw badRequest("displayName cannot be empty");
+    }
+    if (body.photo !== undefined) {
+      if (body.photo !== null && typeof body.photo !== "string") {
+        throw badRequest("photo must be a URL or null");
+      }
+      profile.photo = body.photo === null ? null : body.photo.trim().slice(0, 2000);
+    }
+    for (const key of ["expertise", "languages"]) {
+      if (body[key] !== undefined) profile[key] = stringList(body[key], key);
+    }
+    const numbers = [
+      ["experienceYears", 0, 100],
+      ["rateChatPerMin", 0, 10000],
+      ["rateCallPerMin", 0, 10000],
+      ["ratingAvg", 0, 5],
+      ["ratingCount", 0, 1000000000],
+      ["totalConsultations", 0, 1000000000],
+      ["totalEarnings", 0, 1000000000000],
+      ["freeMinutesLimitMin", 0, 60],
+    ];
+    for (const [key, min, max] of numbers) {
+      if (body[key] !== undefined) profile[key] = boundedNumber(body[key], min, max, key);
+    }
+    for (const key of ["isOnline", "isVerified", "freeMinutesEnabled"]) {
+      if (body[key] === undefined) continue;
+      if (typeof body[key] !== "boolean") throw badRequest(`${key} must be a boolean`);
+      profile[key] = body[key];
+    }
+
     await profile.save();
     res.json({ success: true, message: "Astrologer updated", data: profile });
   } catch (error) { next(error); }
@@ -758,6 +830,7 @@ module.exports = {
   deactivateDeviceToken,
   createAstrologer,
   listAstrologers,
+  getAstrologerDetail,
   updateAstrologer,
   listConsultations,
   listRechargeOrders,

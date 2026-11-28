@@ -11,6 +11,9 @@ const getResponseLanguageInstruction = (locale) => {
   if (normalizedLocale === "en-in" || normalizedLocale.startsWith("en-in-")) {
     return "Respond in natural Hinglish: write Hindi in Latin/Roman script and mix in commonly used English words. Do not use Devanagari. Keep names, numbers, and technical terms recognizable.";
   }
+  if (normalizedLocale === "pa" || normalizedLocale.startsWith("pa-")) {
+    return "Respond entirely in Punjabi using Gurmukhi script, with a warm and respectful tone. Keep names, numbers, and essential technical terms recognizable.";
+  }
   return "Respond entirely in English.";
 };
 

@@ -7,6 +7,7 @@ const {
   verifyRecharge,
   rechargeWebhook,
   listTransactions,
+  rechargePresets,
 } = require("../controllers/walletController");
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.post("/webhook", rechargeWebhook);
 
 router.use(protect);
 router.get("/me", getBalance);
+router.get("/recharge/presets", rechargePresets);
 router.post("/recharge", recharge); // legacy mock, guarded (dev only)
 router.post("/recharge/order", createRechargeOrder);
 router.post("/recharge/verify", verifyRecharge);

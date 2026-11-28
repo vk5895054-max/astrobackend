@@ -7,7 +7,8 @@
     "test": "node --test test/*.test.js",
     "start": "node server.js",
     "create-admin": "node scripts/createAdmin.js",
-    "seed-vastu-rules": "node scripts/seedVastuRules.js"
+    "seed-vastu-rules": "node scripts/seedVastuRules.js",
+    "seed-ai-jyotishis": "node scripts/seedAiJyotishis.js"
   },
   "keywords": [],
   "author": "",
